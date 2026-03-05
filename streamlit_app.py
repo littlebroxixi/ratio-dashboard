@@ -457,7 +457,7 @@ def make_sparkline(data, height=130):
         xaxis=dict(
             visible=False,
             showspikes=True, spikemode='across', spikesnap='cursor',
-            spikethickness=1, spikecolor='rgba(148,163,184,0.5)', spikedash='solid',
+            spikethickness=0.5, spikecolor='rgba(148,163,184,0.4)', spikedash='dash',
         ),
         yaxis=dict(visible=False),
         hovermode='x unified',
