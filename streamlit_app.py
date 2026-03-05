@@ -685,19 +685,25 @@ ih_ic, ih_ic_mean, ih_ic_std = calc_ratio(df, 'sz50', 'zz500')
 # ============ 首页 ============
 if st.session_state.page == 'home':
     rt_html = '<span class="live-dot on"></span> 盘中实时' if is_realtime else '<span class="live-dot off"></span> 收盘数据'
-    st.markdown(f"""
-    <div class="topbar">
-        <div class="topbar-left">
-            <h1>📊 指数比值套利看板</h1>
-            <p>均值回归策略 · 实时监控 · 辅助决策</p>
+    tb_left, tb_right = st.columns([7, 1])
+    with tb_left:
+        st.markdown(f"""
+        <div class="topbar">
+            <div class="topbar-left">
+                <h1>📊 指数比值套利看板</h1>
+                <p>均值回归策略 · 实时监控 · 辅助决策</p>
+            </div>
+            <div class="topbar-right">
+                <span>{rt_html}</span>
+                <span>数据截至 {df.index[-1].strftime('%Y-%m-%d')}</span>
+                <span>{len(df)} 个交易日</span>
+            </div>
         </div>
-        <div class="topbar-right">
-            <span>{rt_html}</span>
-            <span>数据截至 {df.index[-1].strftime('%Y-%m-%d')}</span>
-            <span>{len(df)} 个交易日</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+    with tb_right:
+        st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
+        if st.button("🔄 刷新数据", key="refresh_top"):
+            get_realtime_quotes.clear(); st.rerun()
 
     col1, col2, col3 = st.columns(3, gap="medium")
     with col1:
@@ -712,11 +718,6 @@ if st.session_state.page == 'home':
         render_card("IH / IC", "上证50 / 中证500", ih_ic, "IH/IC")
         if st.button("查看详细分析 →", key="b3", use_container_width=True):
             st.session_state.page = 'ih_ic'; st.rerun()
-
-    _, rc, _ = st.columns([4,2,4])
-    with rc:
-        if st.button("🔄 刷新数据"):
-            get_realtime_quotes.clear(); st.rerun()
 
     st.markdown('<div class="footer">数据来源: AKShare · 仅供学习参考，不构成投资建议</div>', unsafe_allow_html=True)
 
