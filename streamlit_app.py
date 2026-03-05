@@ -107,27 +107,53 @@ st.markdown("""
 .gauge-wrap { margin: 20px 0 8px; }
 .gauge-labels {
     display: flex; justify-content: space-between;
-    font-size: 0.65rem; color: #475569; margin-bottom: 6px;
+    font-size: 0.62rem; color: #475569; margin-bottom: 8px;
+    padding: 0 2px;
 }
-.gauge-bar {
-    position: relative; height: 8px; border-radius: 4px;
+.gauge-labels span {
+    width: 28px; text-align: center;
+}
+.gauge-track {
+    position: relative; height: 10px; border-radius: 5px;
+    background: rgba(255,255,255,0.04);
+    overflow: visible; padding: 0;
+}
+.gauge-fill {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    border-radius: 5px;
     background: linear-gradient(90deg,
-        #22c55e 0%, #22c55e 16.6%,
-        #60a5fa 16.6%, #60a5fa 33.3%,
-        #ef4444 33.3%, #ef4444 66.6%,
-        #60a5fa 66.6%, #60a5fa 83.3%,
-        #22c55e 83.3%, #22c55e 100%
+        #22c55e 0%, #22c55e 14%,
+        #3b9e6e 16.6%,
+        #60a5fa 19%, #60a5fa 31%,
+        #8a7ad4 33.3%,
+        #ef4444 36%, #ef4444 64%,
+        #8a7ad4 66.6%,
+        #60a5fa 69%, #60a5fa 81%,
+        #3b9e6e 83.3%,
+        #22c55e 86%, #22c55e 100%
     );
-    overflow: visible;
+    opacity: 0.85;
 }
+.gauge-ticks {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    display: flex; justify-content: space-between;
+    padding: 0;
+}
+.gauge-tick {
+    width: 1px; height: 100%;
+    background: rgba(255,255,255,0.12);
+}
+.gauge-tick:first-child, .gauge-tick:last-child { background: transparent; }
 .gauge-ptr {
-    position: absolute; top: -4px; width: 16px; height: 16px;
+    position: absolute; top: 50%; width: 14px; height: 14px;
     border-radius: 50%; background: #fff;
-    box-shadow: 0 0 8px rgba(255,255,255,0.6); border: 2px solid #0f172a;
-    transform: translateX(-50%);
+    box-shadow: 0 0 10px rgba(255,255,255,0.5), 0 0 20px rgba(255,255,255,0.15);
+    border: 2.5px solid #0f172a;
+    transform: translate(-50%, -50%);
+    z-index: 2;
 }
 .gauge-val {
-    text-align: center; margin-top: 8px;
+    text-align: center; margin-top: 10px;
     font-size: 0.85rem; font-weight: 700;
 }
 
@@ -531,7 +557,17 @@ def render_card(name, subtitle, data, pair):
                 <span>均值</span>
                 <span>+1σ</span><span>+2σ</span><span>+3σ</span>
             </div>
-            <div class="gauge-bar">
+            <div class="gauge-track">
+                <div class="gauge-fill"></div>
+                <div class="gauge-ticks">
+                    <span class="gauge-tick"></span>
+                    <span class="gauge-tick"></span>
+                    <span class="gauge-tick"></span>
+                    <span class="gauge-tick"></span>
+                    <span class="gauge-tick"></span>
+                    <span class="gauge-tick"></span>
+                    <span class="gauge-tick"></span>
+                </div>
                 <div class="gauge-ptr" style="left:{ptr_pct}%"></div>
             </div>
             <div class="gauge-val" style="color:{zone_color}">
