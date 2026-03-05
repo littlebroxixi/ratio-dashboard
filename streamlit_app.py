@@ -19,6 +19,23 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# 盘中自动刷新（每60秒）
+now = datetime.now()
+is_trading_hours = now.weekday() < 5 and (
+    (now.hour == 9 and now.minute >= 30) or
+    (10 <= now.hour <= 11) or
+    (13 <= now.hour <= 14) or
+    (now.hour == 11 and now.minute <= 30) or
+    (now.hour == 15 and now.minute == 0)
+)
+if is_trading_hours:
+    st.cache_data.clear()
+    st_autorefresh_interval = 60
+    st.markdown(
+        f'<meta http-equiv="refresh" content="{st_autorefresh_interval}">',
+        unsafe_allow_html=True
+    )
+
 # ============ 全局样式 ============
 st.markdown("""
 <style>
@@ -224,6 +241,25 @@ st.markdown("""
 
 
 # ============ 数据获取 ============
+@st.cache_data(ttl=60)
+def get_realtime_quotes():
+    """获取盘中实时行情（新浪源），缓存60秒"""
+    try:
+        df = ak.stock_zh_index_spot_sina()
+        target = df[df['代码'].isin(['sh000300', 'sh000905', 'sh000852'])]
+        quotes = {}
+        for _, row in target.iterrows():
+            code = row['代码']
+            if code == 'sh000300':
+                quotes['hs300'] = float(row['最新价'])
+            elif code == 'sh000905':
+                quotes['zz500'] = float(row['最新价'])
+            elif code == 'sh000852':
+                quotes['zz1000'] = float(row['最新价'])
+        return quotes
+    except Exception:
+        return None
+
 @st.cache_data(ttl=3600)
 def load_data():
     hs300 = ak.stock_zh_index_daily(symbol='sh000300')
@@ -522,6 +558,26 @@ if 'page' not in st.session_state:
 with st.spinner("加载中..."):
     df = load_data()
 
+    # 盘中实时数据：追加当天最新价到历史数据末尾
+    realtime = get_realtime_quotes()
+    is_realtime = False
+    if realtime and len(realtime) == 3:
+        today = pd.Timestamp(datetime.now().date())
+        if today not in df.index:
+            new_row = pd.DataFrame({
+                'hs300': [realtime['hs300']],
+                'zz500': [realtime['zz500']],
+                'zz1000': [realtime['zz1000']]
+            }, index=[today])
+            df = pd.concat([df, new_row])
+            is_realtime = True
+        else:
+            # 今天已有日线数据，用实时价覆盖
+            df.loc[today, 'hs300'] = realtime['hs300']
+            df.loc[today, 'zz500'] = realtime['zz500']
+            df.loc[today, 'zz1000'] = realtime['zz1000']
+            is_realtime = True
+
 ic_if, ic_if_mean, ic_if_std = calc_ratio(df, 'zz500', 'hs300')
 im_ic, im_ic_mean, im_ic_std = calc_ratio(df, 'zz1000', 'zz500')
 
@@ -535,10 +591,11 @@ if st.session_state.page == 'home':
     # 顶部栏
     top_col1, top_col2 = st.columns([8, 2])
     with top_col1:
+        rt_tag = ' &nbsp;|&nbsp; <span style="color:#22c55e">● 盘中实时</span>' if is_realtime else ''
         st.markdown(
             f'<div class="stats-bar">⏱ 共筛选出 <b style="color:#3b82f6">2</b> 组监控配对 &nbsp;|&nbsp; '
             f'数据截至 {df.index[-1].strftime("%Y-%m-%d")} &nbsp;|&nbsp; '
-            f'{len(df)} 个交易日</div>',
+            f'{len(df)} 个交易日{rt_tag}</div>',
             unsafe_allow_html=True
         )
     with top_col2:
