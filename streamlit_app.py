@@ -1,6 +1,6 @@
 """
-指数比值套利监控看板 v3
-IC/IF (中证500/沪深300) + IM/IC (中证1000/中证500)
+指数比值套利监控看板 v4
+IC/IF (中证500/沪深300) + IM/IC (中证1000/中证500) + IH/IC (上证50/中证500)
 streamlit run streamlit_app.py
 """
 
@@ -41,7 +41,7 @@ st.markdown("""
 
 .stApp { background: #080b12; }
 #MainMenu, footer, header { visibility: hidden; }
-.block-container { padding: 1.5rem 2rem 0; max-width: 1400px; }
+.block-container { padding: 1.5rem 2rem 0; max-width: 1600px; }
 
 /* ===== 顶栏 ===== */
 .topbar {
@@ -248,13 +248,14 @@ st.markdown("""
 def get_realtime_quotes():
     try:
         df = ak.stock_zh_index_spot_sina()
-        target = df[df['代码'].isin(['sh000300', 'sh000905', 'sh000852'])]
+        target = df[df['代码'].isin(['sh000300', 'sh000905', 'sh000852', 'sh000016'])]
         quotes = {}
         for _, row in target.iterrows():
             code = row['代码']
             if code == 'sh000300': quotes['hs300'] = float(row['最新价'])
             elif code == 'sh000905': quotes['zz500'] = float(row['最新价'])
             elif code == 'sh000852': quotes['zz1000'] = float(row['最新价'])
+            elif code == 'sh000016': quotes['sz50'] = float(row['最新价'])
         return quotes
     except Exception:
         return None
@@ -270,7 +271,10 @@ def load_data():
     zz1000 = ak.stock_zh_index_daily(symbol='sh000852')
     zz1000['date'] = pd.to_datetime(zz1000['date'])
     zz1000 = zz1000.set_index('date')[['close']].rename(columns={'close': 'zz1000'})
-    df = hs300.join(zz500, how='inner').join(zz1000, how='inner')
+    sz50 = ak.stock_zh_index_daily(symbol='sh000016')
+    sz50['date'] = pd.to_datetime(sz50['date'])
+    sz50 = sz50.set_index('date')[['close']].rename(columns={'close': 'sz50'})
+    df = hs300.join(zz500, how='inner').join(zz1000, how='inner').join(sz50, how='inner')
     df = df[df.index >= '2020-01-01'].copy()
     df.dropna(inplace=True)
     return df
@@ -300,9 +304,12 @@ def get_signal(z, pair):
     if pair == "IC/IF":
         if z > 0: return "bearish", "↘", "中证500 相对偏强 — 做空 IC + 做多 IF"
         else: return "bullish", "↗", "中证500 相对偏弱 — 做多 IC + 做空 IF"
-    else:
+    elif pair == "IM/IC":
         if z > 0: return "bearish", "↘", "中证1000 相对偏强 — 做空 IM + 做多 IC"
         else: return "bullish", "↗", "中证1000 相对偏弱 — 做多 IM + 做空 IC"
+    else:  # IH/IC
+        if z > 0: return "bearish", "↘", "上证50 相对偏强 — 做空 IH + 做多 IC"
+        else: return "bullish", "↗", "上证50 相对偏弱 — 做多 IH + 做空 IC"
 
 
 def z_to_pct(z):
@@ -574,19 +581,20 @@ with st.spinner("加载数据中..."):
     df = load_data()
     realtime = get_realtime_quotes()
     is_realtime = False
-    if realtime and len(realtime) == 3:
+    if realtime and len(realtime) == 4:
         today = pd.Timestamp(datetime.now().date())
+        row_data = {'hs300': realtime['hs300'], 'zz500': realtime['zz500'],
+                    'zz1000': realtime['zz1000'], 'sz50': realtime['sz50']}
         if today not in df.index:
-            df = pd.concat([df, pd.DataFrame({
-                'hs300':[realtime['hs300']],'zz500':[realtime['zz500']],'zz1000':[realtime['zz1000']]
-            }, index=[today])])
+            df = pd.concat([df, pd.DataFrame(row_data, index=[today])])
             is_realtime = True
         else:
-            df.loc[today] = [realtime['hs300'], realtime['zz500'], realtime['zz1000']]
+            df.loc[today] = row_data
             is_realtime = True
 
 ic_if, ic_if_mean, ic_if_std = calc_ratio(df, 'zz500', 'hs300')
 im_ic, im_ic_mean, im_ic_std = calc_ratio(df, 'zz1000', 'zz500')
+ih_ic, ih_ic_mean, ih_ic_std = calc_ratio(df, 'sz50', 'zz500')
 
 # ============ 首页 ============
 if st.session_state.page == 'home':
@@ -605,7 +613,7 @@ if st.session_state.page == 'home':
     </div>
     """, unsafe_allow_html=True)
 
-    col1, col2 = st.columns(2, gap="large")
+    col1, col2, col3 = st.columns(3, gap="medium")
     with col1:
         render_card("IC / IF", "中证500 / 沪深300", ic_if, "IC/IF")
         if st.button("查看详细分析 →", key="b1", use_container_width=True):
@@ -614,6 +622,10 @@ if st.session_state.page == 'home':
         render_card("IM / IC", "中证1000 / 中证500", im_ic, "IM/IC")
         if st.button("查看详细分析 →", key="b2", use_container_width=True):
             st.session_state.page = 'im_ic'; st.rerun()
+    with col3:
+        render_card("IH / IC", "上证50 / 中证500", ih_ic, "IH/IC")
+        if st.button("查看详细分析 →", key="b3", use_container_width=True):
+            st.session_state.page = 'ih_ic'; st.rerun()
 
     _, rc, _ = st.columns([4,2,4])
     with rc:
@@ -632,3 +644,8 @@ elif st.session_state.page == 'im_ic':
     if st.button("← 返回首页"): st.session_state.page = 'home'; st.rerun()
     st.markdown(f'<div class="topbar-left"><h1>IM / IC 详细分析</h1><p>中证1000 / 中证500 · 2020年至今 · 全局标准差</p></div>', unsafe_allow_html=True)
     render_detail("IM/IC", "中证1000/中证500", im_ic, im_ic_mean, im_ic_std, "IM/IC")
+
+elif st.session_state.page == 'ih_ic':
+    if st.button("← 返回首页"): st.session_state.page = 'home'; st.rerun()
+    st.markdown(f'<div class="topbar-left"><h1>IH / IC 详细分析</h1><p>上证50 / 中证500 · 2020年至今 · 全局标准差</p></div>', unsafe_allow_html=True)
+    render_detail("IH/IC", "上证50/中证500", ih_ic, ih_ic_mean, ih_ic_std, "IH/IC")
