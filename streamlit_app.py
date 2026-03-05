@@ -454,7 +454,17 @@ def make_sparkline(data, height=130):
     fig.update_layout(
         height=height, margin=dict(l=0,r=32,t=0,b=0),
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(visible=False), yaxis=dict(visible=False),
+        xaxis=dict(
+            visible=False,
+            showspikes=True, spikemode='across', spikesnap='cursor',
+            spikethickness=1, spikecolor='rgba(148,163,184,0.5)', spikedash='solid',
+        ),
+        yaxis=dict(visible=False),
+        hovermode='x unified',
+        hoverlabel=dict(
+            bgcolor='rgba(15,23,42,0.9)', bordercolor='rgba(255,255,255,0.1)',
+            font=dict(color='#e2e8f0', size=12),
+        ),
     )
     return fig
 
