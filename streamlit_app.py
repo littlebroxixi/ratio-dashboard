@@ -19,7 +19,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 盘中自动刷新
+# 盘中判断
 now = datetime.now()
 is_trading_hours = now.weekday() < 5 and (
     (now.hour == 9 and now.minute >= 30) or
@@ -28,9 +28,6 @@ is_trading_hours = now.weekday() < 5 and (
     (now.hour == 11 and now.minute <= 30) or
     (now.hour == 15 and now.minute == 0)
 )
-if is_trading_hours:
-    st.cache_data.clear()
-    st.markdown('<meta http-equiv="refresh" content="60">', unsafe_allow_html=True)
 
 # ============ 样式 ============
 st.markdown("""
@@ -572,6 +569,11 @@ def render_detail(name, subtitle, data, mean, std, pair):
     </table>
     """, unsafe_allow_html=True)
 
+
+# 盘中自动刷新（仅清实时缓存，不清历史数据）
+if is_trading_hours:
+    get_realtime_quotes.clear()
+    st.markdown('<meta http-equiv="refresh" content="60">', unsafe_allow_html=True)
 
 # ============ 主逻辑 ============
 if 'page' not in st.session_state:
