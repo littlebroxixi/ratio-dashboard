@@ -260,7 +260,7 @@ def get_realtime_quotes():
     except Exception:
         return None
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=86400)
 def load_data():
     hs300 = ak.stock_zh_index_daily(symbol='sh000300')
     hs300['date'] = pd.to_datetime(hs300['date'])
@@ -571,7 +571,7 @@ def render_detail(name, subtitle, data, mean, std, pair):
 if 'page' not in st.session_state:
     st.session_state.page = 'home'
 
-with st.spinner(""):
+with st.spinner("加载数据中..."):
     df = load_data()
     realtime = get_realtime_quotes()
     is_realtime = False
@@ -619,7 +619,7 @@ if st.session_state.page == 'home':
     _, rc, _ = st.columns([4,2,4])
     with rc:
         if st.button("🔄 刷新数据"):
-            st.cache_data.clear(); st.rerun()
+            get_realtime_quotes.clear(); st.rerun()
 
     st.markdown('<div class="footer">数据来源: AKShare · 仅供学习参考，不构成投资建议</div>', unsafe_allow_html=True)
 
