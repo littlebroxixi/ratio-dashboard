@@ -147,13 +147,9 @@ st.markdown("""
     font-size: 0.82rem; font-weight: 500;
     display: flex; align-items: center; gap: 10px;
 }
-.signal-box.bullish {
-    background: linear-gradient(135deg, rgba(34,197,94,0.08), rgba(34,197,94,0.02));
-    border: 1px solid rgba(34,197,94,0.15); color: #86efac;
-}
-.signal-box.bearish {
-    background: linear-gradient(135deg, rgba(239,68,68,0.08), rgba(239,68,68,0.02));
-    border: 1px solid rgba(239,68,68,0.15); color: #fca5a5;
+.signal-box.bullish, .signal-box.bearish {
+    background: linear-gradient(135deg, rgba(96,165,250,0.08), rgba(96,165,250,0.02));
+    border: 1px solid rgba(96,165,250,0.15); color: #93c5fd;
 }
 .signal-box.neutral {
     background: linear-gradient(135deg, rgba(100,116,139,0.08), rgba(100,116,139,0.02));
