@@ -659,7 +659,8 @@ def render_detail(name, subtitle, data, mean, std, pair):
 if 'page' not in st.session_state:
     st.session_state.page = 'home'
 
-with st.spinner("加载数据中..."):
+def _load_all():
+    """加载数据并计算比值，结果存入 session_state"""
     df = load_data()
     realtime = get_realtime_quotes()
     is_realtime = False
@@ -673,10 +674,22 @@ with st.spinner("加载数据中..."):
         else:
             df.loc[today] = row_data
             is_realtime = True
+    st.session_state._df = df
+    st.session_state._is_realtime = is_realtime
+    st.session_state._ic_if = calc_ratio(df, 'zz500', 'hs300')
+    st.session_state._im_ic = calc_ratio(df, 'zz1000', 'zz500')
+    st.session_state._ih_ic = calc_ratio(df, 'sz50', 'zz500')
 
-ic_if, ic_if_mean, ic_if_std = calc_ratio(df, 'zz500', 'hs300')
-im_ic, im_ic_mean, im_ic_std = calc_ratio(df, 'zz1000', 'zz500')
-ih_ic, ih_ic_mean, ih_ic_std = calc_ratio(df, 'sz50', 'zz500')
+# 首次加载或手动刷新时才请求数据
+if '_df' not in st.session_state:
+    with st.spinner("加载数据中..."):
+        _load_all()
+
+df = st.session_state._df
+is_realtime = st.session_state._is_realtime
+ic_if, ic_if_mean, ic_if_std = st.session_state._ic_if
+im_ic, im_ic_mean, im_ic_std = st.session_state._im_ic
+ih_ic, ih_ic_mean, ih_ic_std = st.session_state._ih_ic
 
 # ============ 首页 ============
 if st.session_state.page == 'home':
@@ -697,7 +710,10 @@ if st.session_state.page == 'home':
     _, btn_col = st.columns([6, 1])
     with btn_col:
         if st.button("🔄 刷新数据", key="refresh_top"):
-            get_realtime_quotes.clear(); st.rerun()
+            get_realtime_quotes.clear()
+            for k in ['_df','_is_realtime','_ic_if','_im_ic','_ih_ic']:
+                st.session_state.pop(k, None)
+            st.rerun()
 
     col1, col2, col3 = st.columns(3, gap="medium")
     with col1:
