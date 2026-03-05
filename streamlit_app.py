@@ -1,7 +1,7 @@
 """
-指数比值套利监控看板 v2
+指数比值套利监控看板 v3
 IC/IF (中证500/沪深300) + IM/IC (中证1000/中证500)
-streamlit run ratio_dashboard.py
+streamlit run streamlit_app.py
 """
 
 import streamlit as st
@@ -19,7 +19,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 盘中自动刷新（每60秒）
+# 盘中自动刷新
 now = datetime.now()
 is_trading_hours = now.weekday() < 5 and (
     (now.hour == 9 and now.minute >= 30) or
@@ -30,212 +30,177 @@ is_trading_hours = now.weekday() < 5 and (
 )
 if is_trading_hours:
     st.cache_data.clear()
-    st_autorefresh_interval = 60
-    st.markdown(
-        f'<meta http-equiv="refresh" content="{st_autorefresh_interval}">',
-        unsafe_allow_html=True
-    )
+    st.markdown('<meta http-equiv="refresh" content="60">', unsafe_allow_html=True)
 
-# ============ 全局样式 ============
+# ============ 样式 ============
 st.markdown("""
 <style>
-    /* 深色主题 */
-    .stApp {
-        background-color: #0a0e17;
-    }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
-    /* 隐藏默认元素 */
-    #MainMenu, footer, header {visibility: hidden;}
-    .block-container {padding-top: 1rem; padding-bottom: 0;}
+* { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
 
-    /* 标题 */
-    .main-title {
-        color: #e0e0e0;
-        font-size: 1.5rem;
-        font-weight: 600;
-        padding: 0.5rem 0;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    .main-subtitle {
-        color: #6b7280;
-        font-size: 0.85rem;
-        margin-bottom: 1rem;
-    }
+.stApp { background: #080b12; }
+#MainMenu, footer, header { visibility: hidden; }
+.block-container { padding: 1.5rem 2rem 0; max-width: 1400px; }
 
-    /* 卡片容器 */
-    .ratio-card {
-        background: linear-gradient(135deg, #131722 0%, #1a1f2e 100%);
-        border: 1px solid #2a2e3e;
-        border-radius: 16px;
-        padding: 24px;
-        margin-bottom: 16px;
-        transition: all 0.3s ease;
-    }
-    .ratio-card:hover {
-        border-color: #3b82f6;
-        box-shadow: 0 0 20px rgba(59,130,246,0.1);
-    }
+/* ===== 顶栏 ===== */
+.topbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 0 24px; border-bottom: 1px solid rgba(255,255,255,0.04);
+    margin-bottom: 28px;
+}
+.topbar-left h1 {
+    margin: 0; font-size: 1.6rem; font-weight: 700;
+    background: linear-gradient(135deg, #60a5fa, #a78bfa);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.topbar-left p { margin: 4px 0 0; color: #4b5563; font-size: 0.8rem; }
+.topbar-right {
+    display: flex; align-items: center; gap: 16px; color: #6b7280; font-size: 0.8rem;
+}
+.live-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    display: inline-block; margin-right: 4px; animation: pulse 2s infinite;
+}
+.live-dot.on { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+.live-dot.off { background: #6b7280; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-    /* 卡片标题行 */
-    .card-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 4px;
-    }
-    .card-name {
-        color: #f0f0f0;
-        font-size: 1.2rem;
-        font-weight: 700;
-    }
-    .card-sub {
-        color: #6b7280;
-        font-size: 0.75rem;
-        margin-bottom: 16px;
-    }
+/* ===== 卡片 ===== */
+.card {
+    background: linear-gradient(145deg, rgba(17,24,39,0.9), rgba(15,20,35,0.95));
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px; padding: 28px 28px 20px;
+    backdrop-filter: blur(20px);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative; overflow: hidden;
+}
+.card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+}
+.card:hover {
+    border-color: rgba(96,165,250,0.3);
+    box-shadow: 0 8px 32px rgba(96,165,250,0.08);
+    transform: translateY(-2px);
+}
+.card-top { display: flex; justify-content: space-between; align-items: flex-start; }
+.card-title { font-size: 1.3rem; font-weight: 700; color: #f1f5f9; letter-spacing: -0.02em; }
+.card-desc { font-size: 0.72rem; color: #64748b; margin-top: 2px; }
 
-    /* 涨跌标签 */
-    .badge-up {
-        background: rgba(239,68,68,0.15);
-        color: #ef4444;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 0.85rem;
-        font-weight: 600;
-    }
-    .badge-down {
-        background: rgba(34,197,94,0.15);
-        color: #22c55e;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 0.85rem;
-        font-weight: 600;
-    }
-    .badge-neutral {
-        background: rgba(156,163,175,0.15);
-        color: #9ca3af;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 0.85rem;
-        font-weight: 600;
-    }
+/* 涨跌 badge */
+.chg-badge {
+    padding: 5px 14px; border-radius: 24px; font-size: 0.82rem; font-weight: 600;
+}
+.chg-up { background: rgba(239,68,68,0.12); color: #f87171; }
+.chg-dn { background: rgba(34,197,94,0.12); color: #4ade80; }
+.chg-flat { background: rgba(148,163,184,0.1); color: #94a3b8; }
 
-    /* 比值大数字 */
-    .ratio-value {
-        color: #ffffff;
-        font-size: 2.2rem;
-        font-weight: 700;
-        margin: 4px 0;
-        display: flex;
-        align-items: baseline;
-        gap: 12px;
-    }
-    .ratio-change-up {color: #ef4444; font-size: 1rem; font-weight: 600;}
-    .ratio-change-down {color: #22c55e; font-size: 1rem; font-weight: 600;}
+/* 大数字 */
+.big-num {
+    font-size: 2.6rem; font-weight: 800; color: #f8fafc;
+    margin: 12px 0 4px; letter-spacing: -0.03em;
+    display: flex; align-items: baseline; gap: 14px;
+}
+.big-chg { font-size: 1rem; font-weight: 600; }
+.big-chg.up { color: #f87171; }
+.big-chg.dn { color: #4ade80; }
 
-    /* 区间标签 */
-    .zone-tag {
-        display: inline-block;
-        padding: 3px 10px;
-        border-radius: 12px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        margin-left: 8px;
-    }
-    .zone-normal {background: rgba(34,197,94,0.15); color: #22c55e;}
-    .zone-watch {background: rgba(234,179,8,0.15); color: #eab308;}
-    .zone-trade {background: rgba(249,115,22,0.15); color: #f97316;}
-    .zone-extreme {background: rgba(239,68,68,0.15); color: #ef4444;}
+/* Z-Score 仪表条 */
+.gauge-wrap { margin: 20px 0 8px; }
+.gauge-labels {
+    display: flex; justify-content: space-between;
+    font-size: 0.65rem; color: #475569; margin-bottom: 6px;
+}
+.gauge-bar {
+    position: relative; height: 8px; border-radius: 4px;
+    background: linear-gradient(90deg,
+        #22c55e 0%, #22c55e 16.6%,
+        #eab308 16.6%, #eab308 33.3%,
+        #f97316 33.3%, #f97316 50%,
+        #ef4444 50%, #ef4444 66.6%,
+        #f97316 66.6%, #f97316 83.3%,
+        #eab308 83.3%, #eab308 100%
+    );
+    overflow: visible;
+}
+.gauge-ptr {
+    position: absolute; top: -4px; width: 16px; height: 16px;
+    border-radius: 50%; background: #fff;
+    box-shadow: 0 0 8px rgba(255,255,255,0.6); border: 2px solid #0f172a;
+    transform: translateX(-50%);
+}
+.gauge-val {
+    text-align: center; margin-top: 8px;
+    font-size: 0.85rem; font-weight: 700;
+}
 
-    /* 底部指标行 */
-    .metrics-row {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 12px;
-        margin-top: 16px;
-        padding-top: 16px;
-        border-top: 1px solid #2a2e3e;
-    }
-    .metric-item {
-        text-align: center;
-    }
-    .metric-label {
-        color: #6b7280;
-        font-size: 0.7rem;
-        margin-bottom: 4px;
-    }
-    .metric-value {
-        color: #d1d5db;
-        font-size: 0.9rem;
-        font-weight: 600;
-    }
+/* 底部指标 */
+.card-metrics {
+    display: grid; grid-template-columns: repeat(4,1fr);
+    gap: 8px; margin-top: 20px; padding-top: 16px;
+    border-top: 1px solid rgba(255,255,255,0.04);
+}
+.cm-item { text-align: center; }
+.cm-label { font-size: 0.65rem; color: #475569; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
+.cm-val { font-size: 0.88rem; font-weight: 600; color: #cbd5e1; }
 
-    /* 方向建议 */
-    .direction-box {
-        background: rgba(59,130,246,0.08);
-        border: 1px solid rgba(59,130,246,0.2);
-        border-radius: 10px;
-        padding: 12px 16px;
-        margin-top: 12px;
-        color: #93c5fd;
-        font-size: 0.85rem;
-    }
+/* 方向提示 */
+.signal-box {
+    margin-top: 16px; padding: 14px 18px; border-radius: 14px;
+    font-size: 0.82rem; font-weight: 500;
+    display: flex; align-items: center; gap: 10px;
+}
+.signal-box.bullish {
+    background: linear-gradient(135deg, rgba(34,197,94,0.08), rgba(34,197,94,0.02));
+    border: 1px solid rgba(34,197,94,0.15); color: #86efac;
+}
+.signal-box.bearish {
+    background: linear-gradient(135deg, rgba(239,68,68,0.08), rgba(239,68,68,0.02));
+    border: 1px solid rgba(239,68,68,0.15); color: #fca5a5;
+}
+.signal-icon { font-size: 1.2rem; }
 
-    /* 顶部统计栏 */
-    .stats-bar {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        color: #9ca3af;
-        font-size: 0.85rem;
-        margin-bottom: 1rem;
-        padding: 8px 0;
-    }
+/* 按钮 */
+.stButton > button {
+    background: linear-gradient(135deg, rgba(96,165,250,0.1), rgba(167,139,250,0.1));
+    border: 1px solid rgba(96,165,250,0.2); color: #93c5fd;
+    border-radius: 12px; padding: 10px 20px; font-weight: 600;
+    transition: all 0.3s;
+}
+.stButton > button:hover {
+    background: linear-gradient(135deg, rgba(96,165,250,0.2), rgba(167,139,250,0.2));
+    border-color: rgba(96,165,250,0.4); transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(96,165,250,0.15);
+}
 
-    /* 刷新按钮 */
-    .stButton > button {
-        background: transparent;
-        border: 1px solid #3b4252;
-        color: #9ca3af;
-        border-radius: 8px;
-        padding: 4px 16px;
-        font-size: 0.8rem;
-    }
-    .stButton > button:hover {
-        border-color: #3b82f6;
-        color: #3b82f6;
-    }
+/* 详情页返回按钮 */
+.back-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: #64748b; font-size: 0.85rem; cursor: pointer;
+    padding: 8px 0; transition: color 0.2s;
+}
+.back-btn:hover { color: #93c5fd; }
 
-    /* Tab样式 */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 0;
-        background: #131722;
-        border-radius: 12px;
-        padding: 4px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        color: #6b7280;
-        border-radius: 8px;
-        padding: 8px 20px;
-    }
-    .stTabs [aria-selected="true"] {
-        background: #1e2433;
-        color: #f0f0f0;
-    }
+/* 详情页指标卡 */
+.detail-metrics {
+    display: grid; grid-template-columns: repeat(5,1fr);
+    gap: 12px; margin: 20px 0;
+}
+.dm-card {
+    background: rgba(15,23,42,0.6); border: 1px solid rgba(255,255,255,0.04);
+    border-radius: 14px; padding: 16px; text-align: center;
+}
+.dm-label { font-size: 0.7rem; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; }
+.dm-val { font-size: 1.4rem; font-weight: 700; color: #e2e8f0; margin-top: 6px; }
 
-    /* Expander */
-    .streamlit-expanderHeader {
-        background: #131722;
-        color: #9ca3af;
-        border-radius: 8px;
-    }
-
-    /* Dataframe */
-    .stDataFrame {
-        border-radius: 8px;
-    }
+/* 页脚 */
+.footer {
+    text-align: center; color: #334155; font-size: 0.7rem;
+    padding: 24px 0 12px; margin-top: 24px;
+    border-top: 1px solid rgba(255,255,255,0.03);
+}
+.footer a { color: #475569; text-decoration: none; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -243,19 +208,15 @@ st.markdown("""
 # ============ 数据获取 ============
 @st.cache_data(ttl=60)
 def get_realtime_quotes():
-    """获取盘中实时行情（新浪源），缓存60秒"""
     try:
         df = ak.stock_zh_index_spot_sina()
         target = df[df['代码'].isin(['sh000300', 'sh000905', 'sh000852'])]
         quotes = {}
         for _, row in target.iterrows():
             code = row['代码']
-            if code == 'sh000300':
-                quotes['hs300'] = float(row['最新价'])
-            elif code == 'sh000905':
-                quotes['zz500'] = float(row['最新价'])
-            elif code == 'sh000852':
-                quotes['zz1000'] = float(row['最新价'])
+            if code == 'sh000300': quotes['hs300'] = float(row['最新价'])
+            elif code == 'sh000905': quotes['zz500'] = float(row['最新价'])
+            elif code == 'sh000852': quotes['zz1000'] = float(row['最新价'])
         return quotes
     except Exception:
         return None
@@ -265,15 +226,12 @@ def load_data():
     hs300 = ak.stock_zh_index_daily(symbol='sh000300')
     hs300['date'] = pd.to_datetime(hs300['date'])
     hs300 = hs300.set_index('date')[['close']].rename(columns={'close': 'hs300'})
-
     zz500 = ak.stock_zh_index_daily(symbol='sh000905')
     zz500['date'] = pd.to_datetime(zz500['date'])
     zz500 = zz500.set_index('date')[['close']].rename(columns={'close': 'zz500'})
-
     zz1000 = ak.stock_zh_index_daily(symbol='sh000852')
     zz1000['date'] = pd.to_datetime(zz1000['date'])
     zz1000 = zz1000.set_index('date')[['close']].rename(columns={'close': 'zz1000'})
-
     df = hs300.join(zz500, how='inner').join(zz1000, how='inner')
     df = df[df.index >= '2020-01-01'].copy()
     df.dropna(inplace=True)
@@ -283,67 +241,63 @@ def load_data():
 def calc_ratio(df, col_a, col_b):
     result = pd.DataFrame(index=df.index)
     result['ratio'] = df[col_a] / df[col_b]
-    global_mean = result['ratio'].mean()
-    global_std = result['ratio'].std()
-    result['mean'] = global_mean
-    result['upper_1'] = global_mean + 1 * global_std
-    result['lower_1'] = global_mean - 1 * global_std
-    result['upper_2'] = global_mean + 2 * global_std
-    result['lower_2'] = global_mean - 2 * global_std
-    result['upper_3'] = global_mean + 3 * global_std
-    result['lower_3'] = global_mean - 3 * global_std
-    result['zscore'] = (result['ratio'] - global_mean) / global_std
-    return result, global_mean, global_std
+    m, s = result['ratio'].mean(), result['ratio'].std()
+    result['mean'] = m
+    for i in [1, 2, 3]:
+        result[f'upper_{i}'] = m + i * s
+        result[f'lower_{i}'] = m - i * s
+    result['zscore'] = (result['ratio'] - m) / s
+    return result, m, s
 
 
-def get_zone_info(z):
-    abs_z = abs(z)
-    if abs_z < 1:
-        return "正常", "zone-normal", "100%"
-    elif abs_z < 2:
-        return "关注", "zone-watch", f"{int(100 - (abs_z-1)*20)}%"
-    elif abs_z < 3:
-        return "建仓", "zone-trade", f"{int(60 - (abs_z-2)*20)}%"
-    else:
-        return "极端", "zone-extreme", f"{max(5, int(40 - (abs_z-3)*15))}%"
+def get_zone(z):
+    a = abs(z)
+    if a < 1: return "正常", "#22c55e"
+    elif a < 2: return "关注", "#eab308"
+    elif a < 3: return "建仓", "#f97316"
+    else: return "极端", "#ef4444"
 
 
-def get_direction(z, pair):
+def get_signal(z, pair):
     if pair == "IC/IF":
-        if z > 0:
-            return "💡 中证500 相对偏强 → 做空IC + 做多IF"
-        else:
-            return "💡 中证500 相对偏弱 → 做多IC + 做空IF"
+        if z > 0: return "bearish", "↘", "中证500 相对偏强 — 做空 IC + 做多 IF"
+        else: return "bullish", "↗", "中证500 相对偏弱 — 做多 IC + 做空 IF"
     else:
-        if z > 0:
-            return "💡 中证1000 相对偏强 → 做空IM + 做多IC"
-        else:
-            return "💡 中证1000 相对偏弱 → 做多IM + 做空IC"
+        if z > 0: return "bearish", "↘", "中证1000 相对偏强 — 做空 IM + 做多 IC"
+        else: return "bullish", "↗", "中证1000 相对偏弱 — 做多 IM + 做空 IC"
 
 
-def make_sparkline(data, height=80):
-    """卡片内的迷你走势图"""
+def z_to_pct(z):
+    """Z-Score 映射到 gauge 百分比 (0~100)"""
+    return max(0, min(100, (z + 3) / 6 * 100))
+
+
+def make_sparkline(data, height=110):
     recent = data.tail(60)
-    fig = go.Figure()
+    z = recent.iloc[-1]['zscore']
+    color = '#f87171' if z > 1 else '#4ade80' if z < -1 else '#60a5fa'
 
+    fig = go.Figure()
+    # 区域填充
+    fig.add_trace(go.Scatter(
+        x=recent.index, y=recent['ratio'], mode='lines',
+        line=dict(color=color, width=2),
+        fill='tozeroy', fillcolor=f'rgba({",".join(str(int(color.lstrip("#")[i:i+2],16)) for i in (0,2,4))},0.06)',
+        showlegend=False
+    ))
     # 均值线
     fig.add_trace(go.Scatter(
-        x=recent.index, y=recent['mean'],
-        mode='lines', line=dict(color='#eab308', width=1, dash='dot'),
-        showlegend=False
+        x=recent.index, y=recent['mean'], mode='lines',
+        line=dict(color='#475569', width=1, dash='dot'), showlegend=False
     ))
-
-    # 比值线 - 根据最新zscore决定颜色
-    z = recent.iloc[-1]['zscore']
-    color = '#ef4444' if z > 0 else '#22c55e' if z < 0 else '#9ca3af'
+    # 最后一个点
     fig.add_trace(go.Scatter(
-        x=recent.index, y=recent['ratio'],
-        mode='lines', line=dict(color=color, width=2),
+        x=[recent.index[-1]], y=[recent.iloc[-1]['ratio']], mode='markers',
+        marker=dict(color=color, size=7, line=dict(color='#0f172a', width=2)),
         showlegend=False
     ))
-
     fig.update_layout(
-        height=height, margin=dict(l=0, r=0, t=0, b=0),
+        height=height, margin=dict(l=0,r=0,t=0,b=0),
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(visible=False), yaxis=dict(visible=False),
     )
@@ -351,84 +305,55 @@ def make_sparkline(data, height=80):
 
 
 def make_detail_chart(data, title):
-    """详情页的完整图表"""
-    fig = make_subplots(
-        rows=2, cols=1, shared_xaxes=True,
-        row_heights=[0.7, 0.3], vertical_spacing=0.05
-    )
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                        row_heights=[0.72, 0.28], vertical_spacing=0.04)
 
+    # 比值线
     fig.add_trace(go.Scatter(
-        x=data.index, y=data['ratio'],
-        name='比值', line=dict(color='#60a5fa', width=1.5)
+        x=data.index, y=data['ratio'], name='比值',
+        line=dict(color='#60a5fa', width=1.8)
     ), row=1, col=1)
-
+    # 均值
     fig.add_trace(go.Scatter(
-        x=data.index, y=data['mean'],
-        name='均值', line=dict(color='#eab308', width=1, dash='dash')
+        x=data.index, y=data['mean'], name='均值',
+        line=dict(color='#a78bfa', width=1, dash='dash')
     ), row=1, col=1)
 
-    # ±1σ
-    fig.add_trace(go.Scatter(
-        x=data.index, y=data['upper_1'], name='+1σ',
-        line=dict(color='rgba(34,197,94,0.5)', width=0.5), showlegend=False
-    ), row=1, col=1)
-    fig.add_trace(go.Scatter(
-        x=data.index, y=data['lower_1'], name='-1σ',
-        line=dict(color='rgba(34,197,94,0.5)', width=0.5),
-        fill='tonexty', fillcolor='rgba(34,197,94,0.05)', showlegend=False
-    ), row=1, col=1)
-
-    # ±2σ
-    fig.add_trace(go.Scatter(
-        x=data.index, y=data['upper_2'], name='+2σ',
-        line=dict(color='rgba(249,115,22,0.5)', width=0.5), showlegend=False
-    ), row=1, col=1)
-    fig.add_trace(go.Scatter(
-        x=data.index, y=data['lower_2'], name='-2σ',
-        line=dict(color='rgba(249,115,22,0.5)', width=0.5),
-        fill='tonexty', fillcolor='rgba(249,115,22,0.04)', showlegend=False
-    ), row=1, col=1)
-
-    # ±3σ
-    fig.add_trace(go.Scatter(
-        x=data.index, y=data['upper_3'], name='+3σ',
-        line=dict(color='rgba(239,68,68,0.5)', width=0.5), showlegend=False
-    ), row=1, col=1)
-    fig.add_trace(go.Scatter(
-        x=data.index, y=data['lower_3'], name='-3σ',
-        line=dict(color='rgba(239,68,68,0.5)', width=0.5),
-        fill='tonexty', fillcolor='rgba(239,68,68,0.03)', showlegend=False
-    ), row=1, col=1)
+    # 标准差通道
+    bands = [
+        (1, 'rgba(34,197,94,0.06)', 'rgba(34,197,94,0.4)'),
+        (2, 'rgba(249,115,22,0.04)', 'rgba(249,115,22,0.3)'),
+        (3, 'rgba(239,68,68,0.03)', 'rgba(239,68,68,0.25)'),
+    ]
+    for i, (n, fill, line_c) in enumerate(bands):
+        fig.add_trace(go.Scatter(x=data.index, y=data[f'upper_{n}'],
+            line=dict(color=line_c, width=0.5), showlegend=False), row=1, col=1)
+        fig.add_trace(go.Scatter(x=data.index, y=data[f'lower_{n}'],
+            line=dict(color=line_c, width=0.5), fill='tonexty',
+            fillcolor=fill, showlegend=False, name=f'±{n}σ'), row=1, col=1)
 
     # Z-Score
-    colors = ['#ef4444' if abs(z) >= 3 else '#f97316' if abs(z) >= 2
-              else '#22c55e' if abs(z) >= 1 else '#4b5563' for z in data['zscore']]
-    fig.add_trace(go.Bar(
-        x=data.index, y=data['zscore'],
-        name='Z-Score', marker_color=colors, opacity=0.8
-    ), row=2, col=1)
-
-    for val in [2, -2]:
-        fig.add_hline(y=val, line_dash="dash", line_color="#f97316",
-                      line_width=0.5, row=2, col=1)
-    for val in [3, -3]:
-        fig.add_hline(y=val, line_dash="dash", line_color="#ef4444",
-                      line_width=0.5, row=2, col=1)
-    fig.add_hline(y=0, line_color="#4b5563", line_width=0.5, row=2, col=1)
+    colors = ['#ef4444' if abs(z)>=3 else '#f97316' if abs(z)>=2
+              else '#22c55e' if abs(z)>=1 else '#334155' for z in data['zscore']]
+    fig.add_trace(go.Bar(x=data.index, y=data['zscore'], name='Z-Score',
+                         marker_color=colors, opacity=0.85), row=2, col=1)
+    for v, c in [(2,'#f97316'),(-2,'#f97316'),(3,'#ef4444'),(-3,'#ef4444')]:
+        fig.add_hline(y=v, line_dash="dot", line_color=c, line_width=0.5, row=2, col=1)
+    fig.add_hline(y=0, line_color='#334155', line_width=0.5, row=2, col=1)
 
     fig.update_layout(
-        title=dict(text=title, font=dict(color='#e0e0e0', size=16)),
-        height=550, template='plotly_dark',
-        paper_bgcolor='#131722', plot_bgcolor='#131722',
-        legend=dict(orientation='h', yanchor='bottom', y=1.02,
-                    font=dict(color='#9ca3af')),
-        margin=dict(t=60, b=40, l=50, r=20)
+        title=dict(text=title, font=dict(color='#94a3b8', size=14), x=0),
+        height=520, template='plotly_dark',
+        paper_bgcolor='#0f1320', plot_bgcolor='#0f1320',
+        legend=dict(orientation='h', y=1.06, font=dict(color='#64748b', size=11)),
+        margin=dict(t=50, b=30, l=45, r=15),
+        bargap=0.3,
     )
-    fig.update_xaxes(gridcolor='#1e2433', zeroline=False)
-    fig.update_yaxes(gridcolor='#1e2433', zeroline=False)
-    fig.update_yaxes(title_text='比值', title_font=dict(color='#6b7280'), row=1, col=1)
-    fig.update_yaxes(title_text='Z-Score', range=[-4, 4],
-                     title_font=dict(color='#6b7280'), row=2, col=1)
+    fig.update_xaxes(gridcolor='rgba(255,255,255,0.02)', zeroline=False)
+    fig.update_yaxes(gridcolor='rgba(255,255,255,0.02)', zeroline=False)
+    fig.update_yaxes(title_text='比值', title_font=dict(color='#475569', size=11), row=1, col=1)
+    fig.update_yaxes(title_text='Z-Score', range=[-4.5,4.5],
+                     title_font=dict(color='#475569', size=11), row=2, col=1)
     return fig
 
 
@@ -438,144 +363,161 @@ def calc_efficiency(data):
     results = []
     for entry_z in entry_levels:
         for exit_z in exit_levels:
-            if exit_z >= entry_z:
-                continue
-            trades = []
-            in_trade = False
+            if exit_z >= entry_z: continue
+            trades, in_trade = [], False
             for i in range(len(data)):
-                z = data.iloc[i]['zscore']
-                ratio = data.iloc[i]['ratio']
-                date = data.index[i]
+                z, ratio, date = data.iloc[i]['zscore'], data.iloc[i]['ratio'], data.index[i]
                 if not in_trade:
-                    if z >= entry_z:
-                        in_trade, trade_dir = True, 'short'
-                        entry_date, entry_ratio = date, ratio
-                    elif z <= -entry_z:
-                        in_trade, trade_dir = True, 'long'
-                        entry_date, entry_ratio = date, ratio
+                    if z >= entry_z: in_trade, td, ed, er = True, 'short', date, ratio
+                    elif z <= -entry_z: in_trade, td, ed, er = True, 'long', date, ratio
                 else:
-                    should_exit = (trade_dir == 'short' and z <= exit_z) or \
-                                  (trade_dir == 'long' and z >= -exit_z)
-                    if should_exit:
-                        hold = len(data.loc[entry_date:date]) - 1
-                        pnl = ((entry_ratio - ratio) / entry_ratio * 100) if trade_dir == 'short' \
-                            else ((ratio - entry_ratio) / entry_ratio * 100)
-                        trades.append({'hold': hold, 'pnl': pnl})
-                        in_trade = False
+                    ex = (td=='short' and z<=exit_z) or (td=='long' and z>=-exit_z)
+                    if ex:
+                        h = len(data.loc[ed:date])-1
+                        p = ((er-ratio)/er*100) if td=='short' else ((ratio-er)/er*100)
+                        trades.append({'h':h,'p':p}); in_trade=False
             if trades:
-                wins = len([t for t in trades if t['pnl'] > 0])
-                avg_pnl = np.mean([t['pnl'] for t in trades])
-                avg_hold = np.mean([t['hold'] for t in trades])
-                eff = avg_pnl / avg_hold * 100 if avg_hold > 0 else 0
+                w = len([t for t in trades if t['p']>0])
+                ap = np.mean([t['p'] for t in trades])
+                ah = np.mean([t['h'] for t in trades])
                 results.append({
-                    '入场': f'±{entry_z}σ', '出场': f'±{exit_z}σ' if exit_z > 0 else '均值',
-                    '次数': len(trades), '胜率': f'{wins/len(trades)*100:.0f}%',
-                    '平均收益%': round(avg_pnl, 2), '持有日': int(avg_hold),
-                    '总收益%': round(sum(t['pnl'] for t in trades), 2),
-                    '效率': round(eff, 2)
+                    '入场':f'±{entry_z}σ','出场':f'±{exit_z}σ' if exit_z>0 else '均值',
+                    '次数':len(trades),'胜率':f'{w/len(trades)*100:.0f}%',
+                    '平均收益%':round(ap,2),'持有日':int(ah),
+                    '总收益%':round(sum(t['p'] for t in trades),2),
+                    '效率':round(ap/ah*100 if ah>0 else 0,2)
                 })
-    return pd.DataFrame(results).sort_values('效率', ascending=False).reset_index(drop=True)
+    return pd.DataFrame(results).sort_values('效率',ascending=False).reset_index(drop=True)
 
 
 def render_card(name, subtitle, data, pair):
-    """渲染单个卡片"""
-    latest = data.iloc[-1]
-    prev = data.iloc[-2]
-    z = latest['zscore']
-    ratio = latest['ratio']
-    change = ratio - prev['ratio']
-    change_pct = change / prev['ratio'] * 100
+    latest, prev = data.iloc[-1], data.iloc[-2]
+    z, ratio = latest['zscore'], latest['ratio']
+    chg = ratio - prev['ratio']
+    chg_pct = chg / prev['ratio'] * 100
+    zone_name, zone_color = get_zone(z)
 
-    zone_name, zone_class, strength = get_zone_info(z)
-
-    # 涨跌badge
-    if change > 0:
-        badge = f'<span class="badge-up">▲ {change_pct:.2f}%</span>'
-        change_html = f'<span class="ratio-change-up">+{change:.4f}</span>'
-    elif change < 0:
-        badge = f'<span class="badge-down">▼ {change_pct:.2f}%</span>'
-        change_html = f'<span class="ratio-change-down">{change:.4f}</span>'
+    # Badge
+    if chg > 0:
+        badge = f'<span class="chg-badge chg-up">▲ {chg_pct:.2f}%</span>'
+        chg_html = f'<span class="big-chg up">+{chg:.4f}</span>'
+    elif chg < 0:
+        badge = f'<span class="chg-badge chg-dn">▼ {abs(chg_pct):.2f}%</span>'
+        chg_html = f'<span class="big-chg dn">{chg:.4f}</span>'
     else:
-        badge = f'<span class="badge-neutral">- 0.00%</span>'
-        change_html = f'<span style="color:#9ca3af">0.0000</span>'
+        badge = '<span class="chg-badge chg-flat">— 0.00%</span>'
+        chg_html = ''
 
-    card_html = f"""
-    <div class="ratio-card">
-        <div class="card-header">
-            <span class="card-name">{name}</span>
+    ptr_pct = z_to_pct(z)
+
+    st.markdown(f"""
+    <div class="card">
+        <div class="card-top">
+            <div>
+                <div class="card-title">{name}</div>
+                <div class="card-desc">{subtitle}</div>
+            </div>
             {badge}
         </div>
-        <div class="card-sub">{subtitle}</div>
-        <div class="ratio-value">
-            {ratio:.4f}
-            {change_html}
-            <span class="zone-tag {zone_class}">强度 {strength}</span>
+        <div class="big-num">{ratio:.4f} {chg_html}</div>
+        <div class="gauge-wrap">
+            <div class="gauge-labels">
+                <span>-3σ</span><span>-2σ</span><span>-1σ</span>
+                <span>均值</span>
+                <span>+1σ</span><span>+2σ</span><span>+3σ</span>
+            </div>
+            <div class="gauge-bar">
+                <div class="gauge-ptr" style="left:{ptr_pct}%"></div>
+            </div>
+            <div class="gauge-val" style="color:{zone_color}">
+                Z-Score: {z:+.2f}σ · {zone_name}区间
+            </div>
         </div>
     </div>
-    """
-    st.markdown(card_html, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-    # 迷你走势图
-    st.plotly_chart(make_sparkline(data, height=100), use_container_width=True,
+    st.plotly_chart(make_sparkline(data), use_container_width=True,
                     config={'displayModeBar': False})
 
-    # 底部指标
-    metrics_html = f"""
-    <div class="metrics-row">
-        <div class="metric-item">
-            <div class="metric-label">Z-Score</div>
-            <div class="metric-value">{z:+.2f}σ</div>
-        </div>
-        <div class="metric-item">
-            <div class="metric-label">区间</div>
-            <div class="metric-value">{zone_name}</div>
-        </div>
-        <div class="metric-item">
-            <div class="metric-label">均值</div>
-            <div class="metric-value">{latest['mean']:.4f}</div>
-        </div>
-        <div class="metric-item">
-            <div class="metric-label">±3σ范围</div>
-            <div class="metric-value">{latest['lower_3']:.2f}~{latest['upper_3']:.2f}</div>
-        </div>
+    st.markdown(f"""
+    <div class="card-metrics">
+        <div class="cm-item"><div class="cm-label">均值</div><div class="cm-val">{latest['mean']:.4f}</div></div>
+        <div class="cm-item"><div class="cm-label">+2σ</div><div class="cm-val">{latest['upper_2']:.4f}</div></div>
+        <div class="cm-item"><div class="cm-label">-2σ</div><div class="cm-val">{latest['lower_2']:.4f}</div></div>
+        <div class="cm-item"><div class="cm-label">±3σ 范围</div><div class="cm-val">{latest['lower_3']:.2f} ~ {latest['upper_3']:.2f}</div></div>
     </div>
-    """
-    st.markdown(metrics_html, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-    # 方向建议
     if abs(z) >= 1.5:
-        st.markdown(f'<div class="direction-box">{get_direction(z, pair)}</div>',
+        sig_type, icon, text = get_signal(z, pair)
+        st.markdown(f"""
+        <div class="signal-box {sig_type}">
+            <span class="signal-icon">{icon}</span> {text}
+        </div>
+        """, unsafe_allow_html=True)
+
+
+def render_detail(name, subtitle, data, mean, std, pair):
+    latest = data.iloc[-1]
+    z = latest['zscore']
+    zone_name, zone_color = get_zone(z)
+
+    st.markdown(f"""
+    <div class="detail-metrics">
+        <div class="dm-card"><div class="dm-label">当前比值</div><div class="dm-val">{latest['ratio']:.4f}</div></div>
+        <div class="dm-card"><div class="dm-label">Z-Score</div><div class="dm-val" style="color:{zone_color}">{z:+.2f}σ</div></div>
+        <div class="dm-card"><div class="dm-label">均值</div><div class="dm-val">{mean:.4f}</div></div>
+        <div class="dm-card"><div class="dm-label">标准差</div><div class="dm-val">{std:.4f}</div></div>
+        <div class="dm-card"><div class="dm-label">区间</div><div class="dm-val" style="color:{zone_color}">{zone_name}</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if abs(z) >= 1.5:
+        sig_type, icon, text = get_signal(z, pair)
+        st.markdown(f'<div class="signal-box {sig_type}"><span class="signal-icon">{icon}</span> {text}</div>',
                     unsafe_allow_html=True)
 
+    st.plotly_chart(make_detail_chart(data, f"{name} 比值走势 + 标准差通道"), use_container_width=True)
 
-# ============ 主页面 ============
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("##### 标准差通道")
+        ch = pd.DataFrame({
+            '通道': ['+3σ','+2σ','+1σ','均值','-1σ','-2σ','-3σ'],
+            '数值': [latest[f'upper_3'],latest[f'upper_2'],latest[f'upper_1'],
+                    latest['mean'],latest[f'lower_1'],latest[f'lower_2'],latest[f'lower_3']]
+        })
+        ch['数值'] = ch['数值'].apply(lambda x: f"{x:.4f}")
+        st.dataframe(ch, hide_index=True, use_container_width=True)
+    with c2:
+        st.markdown("##### 最近 10 个交易日")
+        rc = data.tail(10)[['ratio','zscore']].copy()
+        rc.columns = ['比值','Z-Score']
+        rc.index = rc.index.strftime('%Y-%m-%d')
+        rc['Z-Score'] = rc['Z-Score'].apply(lambda x: f"{x:+.2f}σ")
+        st.dataframe(rc, use_container_width=True)
 
-# 初始化页面状态
+    st.markdown("##### 赚钱效率分析")
+    st.dataframe(calc_efficiency(data), hide_index=True, use_container_width=True)
+
+
+# ============ 主逻辑 ============
 if 'page' not in st.session_state:
     st.session_state.page = 'home'
 
-# 加载数据
-with st.spinner("加载中..."):
+with st.spinner(""):
     df = load_data()
-
-    # 盘中实时数据：追加当天最新价到历史数据末尾
     realtime = get_realtime_quotes()
     is_realtime = False
     if realtime and len(realtime) == 3:
         today = pd.Timestamp(datetime.now().date())
         if today not in df.index:
-            new_row = pd.DataFrame({
-                'hs300': [realtime['hs300']],
-                'zz500': [realtime['zz500']],
-                'zz1000': [realtime['zz1000']]
-            }, index=[today])
-            df = pd.concat([df, new_row])
+            df = pd.concat([df, pd.DataFrame({
+                'hs300':[realtime['hs300']],'zz500':[realtime['zz500']],'zz1000':[realtime['zz1000']]
+            }, index=[today])])
             is_realtime = True
         else:
-            # 今天已有日线数据，用实时价覆盖
-            df.loc[today, 'hs300'] = realtime['hs300']
-            df.loc[today, 'zz500'] = realtime['zz500']
-            df.loc[today, 'zz1000'] = realtime['zz1000']
+            df.loc[today] = [realtime['hs300'], realtime['zz500'], realtime['zz1000']]
             is_realtime = True
 
 ic_if, ic_if_mean, ic_if_std = calc_ratio(df, 'zz500', 'hs300')
@@ -583,153 +525,45 @@ im_ic, im_ic_mean, im_ic_std = calc_ratio(df, 'zz1000', 'zz500')
 
 # ============ 首页 ============
 if st.session_state.page == 'home':
-    # 标题
-    st.markdown('<div class="main-title">📊 指数比值套利看板</div>', unsafe_allow_html=True)
-    st.markdown('<div class="main-subtitle">均值回归策略 · 实时监控 · 辅助决策</div>',
-                unsafe_allow_html=True)
+    rt_html = '<span class="live-dot on"></span> 盘中实时' if is_realtime else '<span class="live-dot off"></span> 收盘数据'
+    st.markdown(f"""
+    <div class="topbar">
+        <div class="topbar-left">
+            <h1>📊 指数比值套利看板</h1>
+            <p>均值回归策略 · 实时监控 · 辅助决策</p>
+        </div>
+        <div class="topbar-right">
+            <span>{rt_html}</span>
+            <span>数据截至 {df.index[-1].strftime('%Y-%m-%d')}</span>
+            <span>{len(df)} 个交易日</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # 顶部栏
-    top_col1, top_col2 = st.columns([8, 2])
-    with top_col1:
-        rt_tag = ' &nbsp;|&nbsp; <span style="color:#22c55e">● 盘中实时</span>' if is_realtime else ''
-        st.markdown(
-            f'<div class="stats-bar">⏱ 共筛选出 <b style="color:#3b82f6">2</b> 组监控配对 &nbsp;|&nbsp; '
-            f'数据截至 {df.index[-1].strftime("%Y-%m-%d")} &nbsp;|&nbsp; '
-            f'{len(df)} 个交易日{rt_tag}</div>',
-            unsafe_allow_html=True
-        )
-    with top_col2:
-        if st.button("🔄 刷新数据"):
-            st.cache_data.clear()
-            st.rerun()
-
-    # 两张卡片
     col1, col2 = st.columns(2, gap="large")
-
     with col1:
         render_card("IC / IF", "中证500 / 沪深300", ic_if, "IC/IF")
-        if st.button("📈 查看详细分析", key="btn_icif", use_container_width=True):
-            st.session_state.page = 'ic_if'
-            st.rerun()
-
+        if st.button("查看详细分析 →", key="b1", use_container_width=True):
+            st.session_state.page = 'ic_if'; st.rerun()
     with col2:
         render_card("IM / IC", "中证1000 / 中证500", im_ic, "IM/IC")
-        if st.button("📈 查看详细分析", key="btn_imic", use_container_width=True):
-            st.session_state.page = 'im_ic'
-            st.rerun()
+        if st.button("查看详细分析 →", key="b2", use_container_width=True):
+            st.session_state.page = 'im_ic'; st.rerun()
 
-    # 页脚
-    st.markdown("---")
-    st.markdown(
-        '<p style="text-align:center;color:#4b5563;font-size:0.75rem;">'
-        '数据来源: AKShare &nbsp;|&nbsp; 仅供学习参考，不构成投资建议</p>',
-        unsafe_allow_html=True
-    )
+    _, rc, _ = st.columns([4,2,4])
+    with rc:
+        if st.button("🔄 刷新数据"):
+            st.cache_data.clear(); st.rerun()
 
-# ============ IC/IF 详情页 ============
+    st.markdown('<div class="footer">数据来源: AKShare · 仅供学习参考，不构成投资建议</div>', unsafe_allow_html=True)
+
+# ============ 详情页 ============
 elif st.session_state.page == 'ic_if':
-    if st.button("← 返回首页"):
-        st.session_state.page = 'home'
-        st.rerun()
+    if st.button("← 返回首页"): st.session_state.page = 'home'; st.rerun()
+    st.markdown(f'<div class="topbar-left"><h1>IC / IF 详细分析</h1><p>中证500 / 沪深300 · 2020年至今 · 全局标准差</p></div>', unsafe_allow_html=True)
+    render_detail("IC/IF", "中证500/沪深300", ic_if, ic_if_mean, ic_if_std, "IC/IF")
 
-    st.markdown('<div class="main-title">📈 IC/IF 详细分析</div>', unsafe_allow_html=True)
-    st.markdown('<div class="main-subtitle">中证500 / 沪深300 · 2020年至今 · 全局标准差</div>',
-                unsafe_allow_html=True)
-
-    latest = ic_if.iloc[-1]
-    z = latest['zscore']
-
-    # 顶部指标
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("当前比值", f"{latest['ratio']:.4f}")
-    m2.metric("Z-Score", f"{z:+.2f}σ")
-    m3.metric("均值", f"{ic_if_mean:.4f}")
-    m4.metric("标准差", f"{ic_if_std:.4f}")
-    zone_name, _, _ = get_zone_info(z)
-    m5.metric("区间", zone_name)
-
-    if abs(z) >= 1.5:
-        st.markdown(f'<div class="direction-box">{get_direction(z, "IC/IF")}</div>',
-                    unsafe_allow_html=True)
-
-    # 主图
-    st.plotly_chart(
-        make_detail_chart(ic_if, "IC/IF 比值走势 + 标准差通道"),
-        use_container_width=True
-    )
-
-    # 标准差通道 + 最近数据
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**标准差通道**")
-        channel = pd.DataFrame({
-            '通道': ['+3σ', '+2σ', '+1σ', '均值', '-1σ', '-2σ', '-3σ'],
-            '数值': [latest['upper_3'], latest['upper_2'], latest['upper_1'],
-                    latest['mean'], latest['lower_1'], latest['lower_2'], latest['lower_3']]
-        })
-        channel['数值'] = channel['数值'].apply(lambda x: f"{x:.4f}")
-        st.dataframe(channel, hide_index=True, use_container_width=True)
-
-    with c2:
-        st.markdown("**最近10个交易日**")
-        recent = ic_if.tail(10)[['ratio', 'zscore']].copy()
-        recent.columns = ['比值', 'Z-Score']
-        recent.index = recent.index.strftime('%Y-%m-%d')
-        recent['Z-Score'] = recent['Z-Score'].apply(lambda x: f"{x:+.2f}σ")
-        st.dataframe(recent, use_container_width=True)
-
-    # 赚钱效率
-    st.markdown("**赚钱效率分析**")
-    st.dataframe(calc_efficiency(ic_if), hide_index=True, use_container_width=True)
-
-# ============ IM/IC 详情页 ============
 elif st.session_state.page == 'im_ic':
-    if st.button("← 返回首页"):
-        st.session_state.page = 'home'
-        st.rerun()
-
-    st.markdown('<div class="main-title">📈 IM/IC 详细分析</div>', unsafe_allow_html=True)
-    st.markdown('<div class="main-subtitle">中证1000 / 中证500 · 2020年至今 · 全局标准差</div>',
-                unsafe_allow_html=True)
-
-    latest = im_ic.iloc[-1]
-    z = latest['zscore']
-
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("当前比值", f"{latest['ratio']:.4f}")
-    m2.metric("Z-Score", f"{z:+.2f}σ")
-    m3.metric("均值", f"{im_ic_mean:.4f}")
-    m4.metric("标准差", f"{im_ic_std:.4f}")
-    zone_name, _, _ = get_zone_info(z)
-    m5.metric("区间", zone_name)
-
-    if abs(z) >= 1.5:
-        st.markdown(f'<div class="direction-box">{get_direction(z, "IM/IC")}</div>',
-                    unsafe_allow_html=True)
-
-    st.plotly_chart(
-        make_detail_chart(im_ic, "IM/IC 比值走势 + 标准差通道"),
-        use_container_width=True
-    )
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**标准差通道**")
-        channel = pd.DataFrame({
-            '通道': ['+3σ', '+2σ', '+1σ', '均值', '-1σ', '-2σ', '-3σ'],
-            '数值': [latest['upper_3'], latest['upper_2'], latest['upper_1'],
-                    latest['mean'], latest['lower_1'], latest['lower_2'], latest['lower_3']]
-        })
-        channel['数值'] = channel['数值'].apply(lambda x: f"{x:.4f}")
-        st.dataframe(channel, hide_index=True, use_container_width=True)
-
-    with c2:
-        st.markdown("**最近10个交易日**")
-        recent = im_ic.tail(10)[['ratio', 'zscore']].copy()
-        recent.columns = ['比值', 'Z-Score']
-        recent.index = recent.index.strftime('%Y-%m-%d')
-        recent['Z-Score'] = recent['Z-Score'].apply(lambda x: f"{x:+.2f}σ")
-        st.dataframe(recent, use_container_width=True)
-
-    st.markdown("**赚钱效率分析**")
-    st.dataframe(calc_efficiency(im_ic), hide_index=True, use_container_width=True)
+    if st.button("← 返回首页"): st.session_state.page = 'home'; st.rerun()
+    st.markdown(f'<div class="topbar-left"><h1>IM / IC 详细分析</h1><p>中证1000 / 中证500 · 2020年至今 · 全局标准差</p></div>', unsafe_allow_html=True)
+    render_detail("IM/IC", "中证1000/中证500", im_ic, im_ic_mean, im_ic_std, "IM/IC")
