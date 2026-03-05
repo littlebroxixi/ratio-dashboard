@@ -685,23 +685,21 @@ ih_ic, ih_ic_mean, ih_ic_std = calc_ratio(df, 'sz50', 'zz500')
 # ============ 首页 ============
 if st.session_state.page == 'home':
     rt_html = '<span class="live-dot on"></span> 盘中实时' if is_realtime else '<span class="live-dot off"></span> 收盘数据'
-    tb_left, tb_right = st.columns([7, 1])
-    with tb_left:
-        st.markdown(f"""
-        <div class="topbar">
-            <div class="topbar-left">
-                <h1>📊 指数比值套利看板</h1>
-                <p>均值回归策略 · 实时监控 · 辅助决策</p>
-            </div>
-            <div class="topbar-right">
-                <span>{rt_html}</span>
-                <span>数据截至 {df.index[-1].strftime('%Y-%m-%d')}</span>
-                <span>{len(df)} 个交易日</span>
-            </div>
+    st.markdown(f"""
+    <div class="topbar">
+        <div class="topbar-left">
+            <h1>📊 指数比值套利看板</h1>
+            <p>均值回归策略 · 实时监控 · 辅助决策</p>
         </div>
-        """, unsafe_allow_html=True)
-    with tb_right:
-        st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
+        <div class="topbar-right">
+            <span>{rt_html}</span>
+            <span>数据截至 {df.index[-1].strftime('%Y-%m-%d')}</span>
+            <span>{len(df)} 个交易日</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    _, btn_col = st.columns([6, 1])
+    with btn_col:
         if st.button("🔄 刷新数据", key="refresh_top"):
             get_realtime_quotes.clear(); st.rerun()
 
