@@ -116,11 +116,10 @@ st.markdown("""
     position: relative; height: 8px; border-radius: 4px;
     background: linear-gradient(90deg,
         #22c55e 0%, #22c55e 16.6%,
-        #eab308 16.6%, #eab308 33.3%,
-        #f97316 33.3%, #f97316 50%,
-        #ef4444 50%, #ef4444 66.6%,
-        #f97316 66.6%, #f97316 83.3%,
-        #eab308 83.3%, #eab308 100%
+        #60a5fa 16.6%, #60a5fa 33.3%,
+        #ef4444 33.3%, #ef4444 66.6%,
+        #60a5fa 66.6%, #60a5fa 83.3%,
+        #22c55e 83.3%, #22c55e 100%
     );
     overflow: visible;
 }
@@ -291,10 +290,10 @@ def calc_ratio(df, col_a, col_b):
 
 def get_zone(z):
     a = abs(z)
-    if a < 1: return "正常", "#22c55e"
-    elif a < 2: return "关注", "#eab308"
-    elif a < 3: return "建仓", "#f97316"
-    else: return "极端", "#ef4444"
+    if a < 1: return "正常", "#ef4444"
+    elif a < 2: return "关注", "#60a5fa"
+    elif a < 3: return "建仓", "#22c55e"
+    else: return "极端", "#22c55e"
 
 
 def get_signal(z, pair):
