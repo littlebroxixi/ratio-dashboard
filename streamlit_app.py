@@ -386,27 +386,42 @@ def make_sparkline(data, height=130):
     # ±2σ band
     fig.add_trace(go.Scatter(
         x=recent.index, y=recent['upper_2'], mode='lines',
-        line=dict(width=0), showlegend=False, hoverinfo='skip'
+        line=dict(color='rgba(96,165,250,0.3)', width=0.5, dash='dash'),
+        showlegend=False, hoverinfo='skip'
     ))
     fig.add_trace(go.Scatter(
         x=recent.index, y=recent['lower_2'], mode='lines',
-        line=dict(width=0), fill='tonexty',
-        fillcolor='rgba(96,165,250,0.05)', showlegend=False, hoverinfo='skip'
+        line=dict(color='rgba(96,165,250,0.3)', width=0.5, dash='dash'),
+        fill='tonexty', fillcolor='rgba(96,165,250,0.04)',
+        showlegend=False, hoverinfo='skip'
     ))
     # ±1σ band
     fig.add_trace(go.Scatter(
         x=recent.index, y=recent['upper_1'], mode='lines',
-        line=dict(width=0), showlegend=False, hoverinfo='skip'
+        line=dict(color='rgba(96,165,250,0.2)', width=0.5, dash='dot'),
+        showlegend=False, hoverinfo='skip'
     ))
     fig.add_trace(go.Scatter(
         x=recent.index, y=recent['lower_1'], mode='lines',
-        line=dict(width=0), fill='tonexty',
-        fillcolor='rgba(96,165,250,0.08)', showlegend=False, hoverinfo='skip'
+        line=dict(color='rgba(96,165,250,0.2)', width=0.5, dash='dot'),
+        fill='tonexty', fillcolor='rgba(96,165,250,0.06)',
+        showlegend=False, hoverinfo='skip'
+    ))
+    # ±3σ lines
+    fig.add_trace(go.Scatter(
+        x=recent.index, y=recent['upper_3'], mode='lines',
+        line=dict(color='rgba(239,68,68,0.3)', width=0.5, dash='dash'),
+        showlegend=False, hoverinfo='skip'
+    ))
+    fig.add_trace(go.Scatter(
+        x=recent.index, y=recent['lower_3'], mode='lines',
+        line=dict(color='rgba(239,68,68,0.3)', width=0.5, dash='dash'),
+        showlegend=False, hoverinfo='skip'
     ))
     # 均值线
     fig.add_trace(go.Scatter(
         x=recent.index, y=recent['mean'], mode='lines',
-        line=dict(color='#475569', width=1, dash='dot'), showlegend=False,
+        line=dict(color='#a78bfa', width=1, dash='dot'), showlegend=False,
         hoverinfo='skip'
     ))
     # 比值线
@@ -421,8 +436,23 @@ def make_sparkline(data, height=130):
         marker=dict(color=color, size=7, line=dict(color='#0f172a', width=2)),
         showlegend=False, hoverinfo='skip'
     ))
+    # 右侧标注σ标签
+    last = recent.iloc[-1]
+    labels = [
+        (last['upper_3'], '+3σ', '#ef4444'), (last['lower_3'], '-3σ', '#ef4444'),
+        (last['upper_2'], '+2σ', '#60a5fa'), (last['lower_2'], '-2σ', '#60a5fa'),
+        (last['upper_1'], '+1σ', '#475569'), (last['lower_1'], '-1σ', '#475569'),
+        (last['mean'], '均值', '#a78bfa'),
+    ]
+    for yval, txt, clr in labels:
+        fig.add_annotation(
+            x=1, xref='paper', y=yval, yref='y',
+            text=txt, showarrow=False,
+            font=dict(size=9, color=clr),
+            xanchor='left', xshift=4,
+        )
     fig.update_layout(
-        height=height, margin=dict(l=0,r=0,t=0,b=0),
+        height=height, margin=dict(l=0,r=32,t=0,b=0),
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(visible=False), yaxis=dict(visible=False),
     )
