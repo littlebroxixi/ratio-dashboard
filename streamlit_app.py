@@ -352,12 +352,16 @@ def calc_ratio(df, col_a, col_b):
     return result, m, s
 
 
-def get_zone(z):
+def get_zone(z, pair):
     a = abs(z)
-    if a < 1: return "正常", "#ef4444"
-    elif a < 2: return "关注", "#60a5fa"
-    elif a < 3: return "建仓", "#22c55e"
-    else: return "极端", "#22c55e"
+    entry_thresh, _ = get_ops_thresholds(pair)
+    # 从高到低匹配操作阈值
+    for label, thresh, _ in reversed(entry_thresh):
+        if a >= thresh:
+            return label, "#22c55e"
+    if a >= 1:
+        return "关注", "#60a5fa"
+    return "正常", "#94a3b8"
 
 
 def get_signal(z, pair):
@@ -591,7 +595,7 @@ def render_card(name, subtitle, data, pair):
     z, ratio = latest['zscore'], latest['ratio']
     chg = ratio - prev['ratio']
     chg_pct = chg / prev['ratio'] * 100
-    zone_name, zone_color = get_zone(z)
+    zone_name, zone_color = get_zone(z, pair)
 
     # Badge
     if chg > 0:
@@ -692,7 +696,7 @@ def render_card(name, subtitle, data, pair):
 def render_detail(name, subtitle, data, mean, std, pair):
     latest = data.iloc[-1]
     z = latest['zscore']
-    zone_name, zone_color = get_zone(z)
+    zone_name, zone_color = get_zone(z, pair)
 
     st.markdown(f"""
     <div class="detail-metrics">
