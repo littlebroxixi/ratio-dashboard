@@ -287,6 +287,11 @@ st.markdown("""
 /* 隐藏 Streamlit 自带的 dataframe */
 .stDataFrame { display: none !important; }
 
+/* 首页列内紧凑间距 */
+[data-testid="column"] [data-testid="stPlotlyChart"] {
+    margin-top: -1rem; margin-bottom: -1rem;
+}
+
 /* 页脚 */
 .footer {
     text-align: center; color: #334155; font-size: 0.7rem;
@@ -372,29 +377,49 @@ def z_to_pct(z):
     return max(0, min(100, (z + 3) / 6 * 100))
 
 
-def make_sparkline(data, height=110):
-    recent = data.tail(60)
+def make_sparkline(data, height=130):
+    recent = data.tail(120)  # 近半年
     z = recent.iloc[-1]['zscore']
     color = '#f87171' if z > 1 else '#4ade80' if z < -1 else '#60a5fa'
 
     fig = go.Figure()
-    # 区域填充
+    # ±2σ band
     fig.add_trace(go.Scatter(
-        x=recent.index, y=recent['ratio'], mode='lines',
-        line=dict(color=color, width=2),
-        fill='tozeroy', fillcolor=f'rgba({",".join(str(int(color.lstrip("#")[i:i+2],16)) for i in (0,2,4))},0.06)',
-        showlegend=False
+        x=recent.index, y=recent['upper_2'], mode='lines',
+        line=dict(width=0), showlegend=False, hoverinfo='skip'
+    ))
+    fig.add_trace(go.Scatter(
+        x=recent.index, y=recent['lower_2'], mode='lines',
+        line=dict(width=0), fill='tonexty',
+        fillcolor='rgba(96,165,250,0.05)', showlegend=False, hoverinfo='skip'
+    ))
+    # ±1σ band
+    fig.add_trace(go.Scatter(
+        x=recent.index, y=recent['upper_1'], mode='lines',
+        line=dict(width=0), showlegend=False, hoverinfo='skip'
+    ))
+    fig.add_trace(go.Scatter(
+        x=recent.index, y=recent['lower_1'], mode='lines',
+        line=dict(width=0), fill='tonexty',
+        fillcolor='rgba(96,165,250,0.08)', showlegend=False, hoverinfo='skip'
     ))
     # 均值线
     fig.add_trace(go.Scatter(
         x=recent.index, y=recent['mean'], mode='lines',
-        line=dict(color='#475569', width=1, dash='dot'), showlegend=False
+        line=dict(color='#475569', width=1, dash='dot'), showlegend=False,
+        hoverinfo='skip'
+    ))
+    # 比值线
+    fig.add_trace(go.Scatter(
+        x=recent.index, y=recent['ratio'], mode='lines',
+        line=dict(color=color, width=2), showlegend=False,
+        hovertemplate='%{y:.4f}<extra></extra>'
     ))
     # 最后一个点
     fig.add_trace(go.Scatter(
         x=[recent.index[-1]], y=[recent.iloc[-1]['ratio']], mode='markers',
         marker=dict(color=color, size=7, line=dict(color='#0f172a', width=2)),
-        showlegend=False
+        showlegend=False, hoverinfo='skip'
     ))
     fig.update_layout(
         height=height, margin=dict(l=0,r=0,t=0,b=0),
@@ -541,6 +566,7 @@ def render_card(name, subtitle, data, pair):
 
     ptr_pct = z_to_pct(z)
 
+    # ---- 顶部卡片：标题 + 大数字 ----
     st.markdown(f"""
     <div class="card">
         <div class="card-top">
@@ -551,7 +577,40 @@ def render_card(name, subtitle, data, pair):
             {badge}
         </div>
         <div class="big-num">{ratio:.4f} {chg_html}</div>
-        <div class="gauge-wrap">
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ---- 近半年偏离折线图 ----
+    st.plotly_chart(make_sparkline(data, height=130),
+                    use_container_width=True,
+                    config={'displayModeBar': False})
+
+    # ---- 合并卡片：gauge + 操作建议 ----
+    abs_z = abs(z)
+    entry_thresh, exit_thresh = get_ops_thresholds(pair)
+
+    rows_html = ""
+    for label, thresh, desc in entry_thresh:
+        if abs_z >= thresh:
+            dot_cls = "green"
+            row_cls = "active" if abs_z < (thresh + 0.4) else "done"
+        else:
+            dot_cls = "gray"
+            row_cls = "waiting"
+        rows_html += f'<div class="ops-row {row_cls}"><span class="ops-dot {dot_cls}"></span><span class="ops-label">{label}</span><span class="ops-thresh">±{thresh}σ</span><span class="ops-desc">{desc}</span></div>'
+
+    for label, thresh, desc in exit_thresh:
+        if abs_z >= entry_thresh[0][1] and abs_z <= thresh:
+            dot_cls = "green"
+            row_cls = "active"
+        else:
+            dot_cls = "gray"
+            row_cls = "waiting"
+        rows_html += f'<div class="ops-row {row_cls}"><span class="ops-dot {dot_cls}"></span><span class="ops-label">{label}</span><span class="ops-thresh">±{thresh}σ</span><span class="ops-desc">{desc}</span></div>'
+
+    st.markdown(f"""
+    <div class="card" style="padding: 20px 24px 16px;">
+        <div class="gauge-wrap" style="margin-top: 0;">
             <div class="gauge-labels">
                 <span>-3σ</span><span>-2σ</span><span>-1σ</span>
                 <span>均值</span>
@@ -574,37 +633,11 @@ def render_card(name, subtitle, data, pair):
                 Z-Score: {z:+.2f}σ · {zone_name}区间
             </div>
         </div>
+        <div class="ops-panel" style="margin-top: 14px;">{rows_html}</div>
     </div>
     """, unsafe_allow_html=True)
 
-    # 实操建议面板
-    abs_z = abs(z)
-    entry_thresh, exit_thresh = get_ops_thresholds(pair)
-
-    rows_html = ""
-    # 入场阶段
-    for label, thresh, desc in entry_thresh:
-        if abs_z >= thresh:
-            # 已达到这个阈值
-            dot_cls = "green"
-            row_cls = "active" if abs_z < (thresh + 0.4) else "done"
-        else:
-            dot_cls = "gray"
-            row_cls = "waiting"
-        rows_html += f'<div class="ops-row {row_cls}"><span class="ops-dot {dot_cls}"></span><span class="ops-label">{label}</span><span class="ops-thresh">±{thresh}σ</span><span class="ops-desc">{desc}</span></div>'
-
-    # 出场阶段（始终显示，保持卡片高度一致）
-    for label, thresh, desc in exit_thresh:
-        if abs_z >= entry_thresh[0][1] and abs_z <= thresh:
-            dot_cls = "green"
-            row_cls = "active"
-        else:
-            dot_cls = "gray"
-            row_cls = "waiting"
-        rows_html += f'<div class="ops-row {row_cls}"><span class="ops-dot {dot_cls}"></span><span class="ops-label">{label}</span><span class="ops-thresh">±{thresh}σ</span><span class="ops-desc">{desc}</span></div>'
-
-    st.markdown(f'<div class="ops-panel">{rows_html}</div>', unsafe_allow_html=True)
-
+    # ---- 信号提示 ----
     if abs(z) >= 1.5:
         sig_type, icon, text = get_signal(z, pair)
     else:
