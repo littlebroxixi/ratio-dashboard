@@ -194,6 +194,13 @@ st.markdown("""
 .dm-label { font-size: 0.7rem; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; }
 .dm-val { font-size: 1.4rem; font-weight: 700; color: #e2e8f0; margin-top: 6px; }
 
+/* ===== 小节标题 ===== */
+.stMarkdown h5 {
+    color: #e2e8f0 !important; font-size: 1rem !important;
+    font-weight: 600 !important; letter-spacing: -0.01em;
+    margin-bottom: 12px !important;
+}
+
 /* ===== 自定义表格 ===== */
 .dark-table {
     width: 100%; border-collapse: separate; border-spacing: 0;
