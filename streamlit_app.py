@@ -655,10 +655,9 @@ def render_detail(name, subtitle, data, mean, std, pair):
     """, unsafe_allow_html=True)
 
 
-# 盘中自动刷新（仅清实时缓存，不清历史数据）
+# 盘中：仅清实时缓存，让手动刷新拿到最新报价
 if is_trading_hours:
     get_realtime_quotes.clear()
-    st.markdown('<meta http-equiv="refresh" content="60">', unsafe_allow_html=True)
 
 # ============ 主逻辑 ============
 if 'page' not in st.session_state:
