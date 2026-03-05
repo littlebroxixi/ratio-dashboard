@@ -655,10 +655,6 @@ def render_detail(name, subtitle, data, mean, std, pair):
     """, unsafe_allow_html=True)
 
 
-# 盘中：仅清实时缓存，让手动刷新拿到最新报价
-if is_trading_hours:
-    get_realtime_quotes.clear()
-
 # ============ 主逻辑 ============
 if 'page' not in st.session_state:
     st.session_state.page = 'home'
