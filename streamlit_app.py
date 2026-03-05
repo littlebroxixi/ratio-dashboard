@@ -194,6 +194,38 @@ st.markdown("""
 .dm-label { font-size: 0.7rem; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; }
 .dm-val { font-size: 1.4rem; font-weight: 700; color: #e2e8f0; margin-top: 6px; }
 
+/* ===== 自定义表格 ===== */
+.dark-table {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+    border-radius: 14px; overflow: hidden;
+    background: rgba(15,23,42,0.5);
+    border: 1px solid rgba(255,255,255,0.05);
+    font-size: 0.82rem;
+}
+.dark-table thead th {
+    background: rgba(255,255,255,0.03);
+    color: #64748b; font-weight: 600; font-size: 0.72rem;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 12px 16px; text-align: left;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.dark-table tbody td {
+    padding: 10px 16px; color: #cbd5e1;
+    border-bottom: 1px solid rgba(255,255,255,0.025);
+    transition: background 0.2s;
+}
+.dark-table tbody tr:last-child td { border-bottom: none; }
+.dark-table tbody tr:hover td { background: rgba(96,165,250,0.04); }
+.dark-table .num { font-variant-numeric: tabular-nums; font-weight: 500; color: #e2e8f0; }
+.dark-table .z-pos { color: #f87171; font-weight: 600; }
+.dark-table .z-neg { color: #4ade80; font-weight: 600; }
+.dark-table .z-neutral { color: #94a3b8; font-weight: 500; }
+.dark-table .highlight-row td { background: rgba(96,165,250,0.06); }
+.dark-table .eff-best td { background: rgba(34,197,94,0.06); }
+
+/* 隐藏 Streamlit 自带的 dataframe */
+.stDataFrame { display: none !important; }
+
 /* 页脚 */
 .footer {
     text-align: center; color: #334155; font-size: 0.7rem;
@@ -482,23 +514,50 @@ def render_detail(name, subtitle, data, mean, std, pair):
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("##### 标准差通道")
-        ch = pd.DataFrame({
-            '通道': ['+3σ','+2σ','+1σ','均值','-1σ','-2σ','-3σ'],
-            '数值': [latest[f'upper_3'],latest[f'upper_2'],latest[f'upper_1'],
-                    latest['mean'],latest[f'lower_1'],latest[f'lower_2'],latest[f'lower_3']]
-        })
-        ch['数值'] = ch['数值'].apply(lambda x: f"{x:.4f}")
-        st.dataframe(ch, hide_index=True, use_container_width=True)
+        bands_data = [
+            ('+3σ', latest['upper_3']), ('+2σ', latest['upper_2']),
+            ('+1σ', latest['upper_1']), ('均值', latest['mean']),
+            ('-1σ', latest['lower_1']), ('-2σ', latest['lower_2']),
+            ('-3σ', latest['lower_3']),
+        ]
+        rows_html = ""
+        for label, val in bands_data:
+            hl = ' class="highlight-row"' if label == '均值' else ''
+            rows_html += f'<tr{hl}><td>{label}</td><td class="num">{val:.4f}</td></tr>'
+        st.markdown(f"""
+        <table class="dark-table">
+            <thead><tr><th>通道</th><th>数值</th></tr></thead>
+            <tbody>{rows_html}</tbody>
+        </table>
+        """, unsafe_allow_html=True)
+
     with c2:
         st.markdown("##### 最近 10 个交易日")
-        rc = data.tail(10)[['ratio','zscore']].copy()
-        rc.columns = ['比值','Z-Score']
-        rc.index = rc.index.strftime('%Y-%m-%d')
-        rc['Z-Score'] = rc['Z-Score'].apply(lambda x: f"{x:+.2f}σ")
-        st.dataframe(rc, use_container_width=True)
+        recent = data.tail(10)
+        rows_html = ""
+        for date, row in recent.iterrows():
+            zv = row['zscore']
+            z_cls = 'z-pos' if zv > 0.5 else 'z-neg' if zv < -0.5 else 'z-neutral'
+            rows_html += f'<tr><td>{date.strftime("%Y-%m-%d")}</td><td class="num">{row["ratio"]:.4f}</td><td class="{z_cls}">{zv:+.2f}σ</td></tr>'
+        st.markdown(f"""
+        <table class="dark-table">
+            <thead><tr><th>日期</th><th>比值</th><th>Z-Score</th></tr></thead>
+            <tbody>{rows_html}</tbody>
+        </table>
+        """, unsafe_allow_html=True)
 
     st.markdown("##### 赚钱效率分析")
-    st.dataframe(calc_efficiency(data), hide_index=True, use_container_width=True)
+    eff = calc_efficiency(data)
+    eff_rows = ""
+    for i, row in eff.iterrows():
+        hl = ' class="eff-best"' if i == 0 else ''
+        eff_rows += f'<tr{hl}><td>{row["入场"]}</td><td>{row["出场"]}</td><td class="num">{row["次数"]}</td><td class="num">{row["胜率"]}</td><td class="num">{row["平均收益%"]}</td><td class="num">{row["持有日"]}</td><td class="num">{row["总收益%"]}</td><td class="num" style="color:#60a5fa;font-weight:700">{row["效率"]}</td></tr>'
+    st.markdown(f"""
+    <table class="dark-table">
+        <thead><tr><th>入场</th><th>出场</th><th>次数</th><th>胜率</th><th>平均收益%</th><th>持有日</th><th>总收益%</th><th>效率</th></tr></thead>
+        <tbody>{eff_rows}</tbody>
+    </table>
+    """, unsafe_allow_html=True)
 
 
 # ============ 主逻辑 ============
