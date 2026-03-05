@@ -707,9 +707,9 @@ if st.session_state.page == 'home':
         </div>
     </div>
     """, unsafe_allow_html=True)
-    _, btn_col = st.columns([5, 1])
+    _, btn_col = st.columns([9, 1])
     with btn_col:
-        if st.button("🔄 刷新", key="refresh_top"):
+        if st.button("🔄 刷新", key="refresh_top", use_container_width=True):
             get_realtime_quotes.clear()
             for k in ['_df','_is_realtime','_ic_if','_im_ic','_ih_ic']:
                 st.session_state.pop(k, None)
