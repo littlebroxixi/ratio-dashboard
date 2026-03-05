@@ -190,6 +190,38 @@ st.markdown("""
 .dm-label { font-size: 0.7rem; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; }
 .dm-val { font-size: 1.4rem; font-weight: 700; color: #e2e8f0; margin-top: 6px; }
 
+/* ===== 操作建议面板 ===== */
+.ops-panel {
+    margin-top: 16px; padding: 0; display: flex; flex-direction: column; gap: 6px;
+}
+.ops-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px; border-radius: 10px;
+    font-size: 0.78rem; color: #94a3b8;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.03);
+}
+.ops-row.active {
+    background: rgba(34,197,94,0.08);
+    border-color: rgba(34,197,94,0.2);
+    color: #86efac;
+}
+.ops-row.done {
+    background: rgba(96,165,250,0.06);
+    border-color: rgba(96,165,250,0.15);
+    color: #93c5fd;
+}
+.ops-row.waiting { color: #475569; }
+.ops-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.ops-dot.green { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+.ops-dot.blue { background: #60a5fa; }
+.ops-dot.gray { background: #334155; }
+.ops-label { font-weight: 600; min-width: 48px; }
+.ops-thresh { font-variant-numeric: tabular-nums; min-width: 42px; text-align: center; }
+.ops-desc { flex: 1; }
+
 /* ===== 小节标题 ===== */
 .stMarkdown h5 {
     color: #e2e8f0 !important; font-size: 1rem !important;
@@ -432,6 +464,37 @@ def calc_efficiency(data):
     return pd.DataFrame(results).sort_values('效率',ascending=False).reset_index(drop=True)
 
 
+def get_ops_thresholds(pair):
+    """每个配对的操作阈值，基于历史回测结论"""
+    if pair == "IC/IF":
+        return [
+            ('建仓', 2.4, '回撤<5.3%'),
+            ('重仓', 2.8, '回撤<1.3%'),
+            ('All-in', 3.0, '历史零回撤'),
+        ], [
+            ('减仓', 1.5, '已吃60%利润'),
+            ('清仓', 0.5, '接近均值'),
+        ]
+    elif pair == "IM/IC":
+        return [
+            ('建仓', 1.6, '回撤<3.4%'),
+            ('重仓', 1.8, '回撤<2.4%'),
+            ('All-in', 3.0, '历史零回撤'),
+        ], [
+            ('减仓', 1.6, '效率峰值'),
+            ('清仓', 1.4, '再拿效率崩'),
+        ]
+    else:  # IH/IC
+        return [
+            ('建仓', 2.4, '回撤<6.0%'),
+            ('重仓', 2.8, '回撤<2.8%'),
+            ('All-in', 3.0, '回撤≈0'),
+        ], [
+            ('减仓', 2.0, '效率峰值'),
+            ('清仓', 1.5, '效率走低'),
+        ]
+
+
 def render_card(name, subtitle, data, pair):
     latest, prev = data.iloc[-1], data.iloc[-2]
     z, ratio = latest['zscore'], latest['ratio']
@@ -478,17 +541,34 @@ def render_card(name, subtitle, data, pair):
     </div>
     """, unsafe_allow_html=True)
 
-    st.plotly_chart(make_sparkline(data), use_container_width=True,
-                    config={'displayModeBar': False})
+    # 实操建议面板
+    abs_z = abs(z)
+    entry_thresh, exit_thresh = get_ops_thresholds(pair)
 
-    st.markdown(f"""
-    <div class="card-metrics">
-        <div class="cm-item"><div class="cm-label">均值</div><div class="cm-val">{latest['mean']:.4f}</div></div>
-        <div class="cm-item"><div class="cm-label">+2σ</div><div class="cm-val">{latest['upper_2']:.4f}</div></div>
-        <div class="cm-item"><div class="cm-label">-2σ</div><div class="cm-val">{latest['lower_2']:.4f}</div></div>
-        <div class="cm-item"><div class="cm-label">±3σ 范围</div><div class="cm-val">{latest['lower_3']:.2f} ~ {latest['upper_3']:.2f}</div></div>
-    </div>
-    """, unsafe_allow_html=True)
+    rows_html = ""
+    # 入场阶段
+    for label, thresh, desc in entry_thresh:
+        if abs_z >= thresh:
+            # 已达到这个阈值
+            dot_cls = "green"
+            row_cls = "active" if abs_z < (thresh + 0.4) else "done"
+        else:
+            dot_cls = "gray"
+            row_cls = "waiting"
+        rows_html += f'<div class="ops-row {row_cls}"><span class="ops-dot {dot_cls}"></span><span class="ops-label">{label}</span><span class="ops-thresh">±{thresh}σ</span><span class="ops-desc">{desc}</span></div>'
+
+    # 出场阶段（只在已建仓时显示）
+    if abs_z >= entry_thresh[0][1]:
+        for label, thresh, desc in exit_thresh:
+            if abs_z <= thresh:
+                dot_cls = "green"
+                row_cls = "active"
+            else:
+                dot_cls = "gray"
+                row_cls = "waiting"
+            rows_html += f'<div class="ops-row {row_cls}"><span class="ops-dot {dot_cls}"></span><span class="ops-label">{label}</span><span class="ops-thresh">±{thresh}σ</span><span class="ops-desc">{desc}</span></div>'
+
+    st.markdown(f'<div class="ops-panel">{rows_html}</div>', unsafe_allow_html=True)
 
     if abs(z) >= 1.5:
         sig_type, icon, text = get_signal(z, pair)
