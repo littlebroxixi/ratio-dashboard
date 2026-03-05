@@ -155,6 +155,10 @@ st.markdown("""
     background: linear-gradient(135deg, rgba(239,68,68,0.08), rgba(239,68,68,0.02));
     border: 1px solid rgba(239,68,68,0.15); color: #fca5a5;
 }
+.signal-box.neutral {
+    background: linear-gradient(135deg, rgba(100,116,139,0.08), rgba(100,116,139,0.02));
+    border: 1px solid rgba(100,116,139,0.15); color: #94a3b8;
+}
 .signal-icon { font-size: 1.2rem; }
 
 /* 按钮 */
@@ -557,26 +561,27 @@ def render_card(name, subtitle, data, pair):
             row_cls = "waiting"
         rows_html += f'<div class="ops-row {row_cls}"><span class="ops-dot {dot_cls}"></span><span class="ops-label">{label}</span><span class="ops-thresh">±{thresh}σ</span><span class="ops-desc">{desc}</span></div>'
 
-    # 出场阶段（只在已建仓时显示）
-    if abs_z >= entry_thresh[0][1]:
-        for label, thresh, desc in exit_thresh:
-            if abs_z <= thresh:
-                dot_cls = "green"
-                row_cls = "active"
-            else:
-                dot_cls = "gray"
-                row_cls = "waiting"
-            rows_html += f'<div class="ops-row {row_cls}"><span class="ops-dot {dot_cls}"></span><span class="ops-label">{label}</span><span class="ops-thresh">±{thresh}σ</span><span class="ops-desc">{desc}</span></div>'
+    # 出场阶段（始终显示，保持卡片高度一致）
+    for label, thresh, desc in exit_thresh:
+        if abs_z >= entry_thresh[0][1] and abs_z <= thresh:
+            dot_cls = "green"
+            row_cls = "active"
+        else:
+            dot_cls = "gray"
+            row_cls = "waiting"
+        rows_html += f'<div class="ops-row {row_cls}"><span class="ops-dot {dot_cls}"></span><span class="ops-label">{label}</span><span class="ops-thresh">±{thresh}σ</span><span class="ops-desc">{desc}</span></div>'
 
     st.markdown(f'<div class="ops-panel">{rows_html}</div>', unsafe_allow_html=True)
 
     if abs(z) >= 1.5:
         sig_type, icon, text = get_signal(z, pair)
-        st.markdown(f"""
-        <div class="signal-box {sig_type}">
-            <span class="signal-icon">{icon}</span> {text}
-        </div>
-        """, unsafe_allow_html=True)
+    else:
+        sig_type, icon, text = "neutral", "—", "比值在正常范围内，暂无操作信号"
+    st.markdown(f"""
+    <div class="signal-box {sig_type}">
+        <span class="signal-icon">{icon}</span> {text}
+    </div>
+    """, unsafe_allow_html=True)
 
 
 def render_detail(name, subtitle, data, mean, std, pair):
