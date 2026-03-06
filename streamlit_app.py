@@ -353,7 +353,7 @@ def calc_ratio(df, col_a, col_b):
 
 
 def get_zone(z, pair):
-    a = abs(z)
+    a = round(abs(z), 2)
     entry_thresh, _ = get_ops_thresholds(pair)
     # 从高到低匹配操作阈值
     for label, thresh, _ in reversed(entry_thresh):
@@ -630,7 +630,7 @@ def render_card(name, subtitle, data, pair):
                     config={'displayModeBar': False})
 
     # ---- 合并卡片：gauge + 操作建议 ----
-    abs_z = abs(z)
+    abs_z = round(abs(z), 2)
     entry_thresh, exit_thresh = get_ops_thresholds(pair)
 
     rows_html = ""
