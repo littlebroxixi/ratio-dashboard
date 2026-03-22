@@ -562,7 +562,8 @@ def calc_efficiency(data, pair=None):
                         else:
                             er = data.iloc[i]['ratio']
                 else:
-                    ex = (td=='short' and z<=exit_z) or (td=='long' and z>=-exit_z)
+                    rz = round(abs(z), 1)
+                    ex = (td=='short' and rz<=exit_z) or (td=='long' and rz<=exit_z)
                     if ex:
                         h = len(data.loc[ed:date]) - 1
                         if use_spread:
