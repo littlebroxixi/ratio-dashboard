@@ -535,7 +535,7 @@ PAIR_CONFIG = {
 
 def calc_efficiency(data, pair=None):
     ANNUAL_OPP_RATE = 0.02  # 年化机会成本率 2%
-    entry_levels = [3.0, 2.0, 1.0]
+    entry_levels = [3.0, 2.0]
     use_spread = pair in PAIR_CONFIG
     if use_spread:
         pv = PAIR_CONFIG[pair]['point_value']
