@@ -343,6 +343,8 @@ def load_data():
 def calc_ratio(df, col_a, col_b):
     result = pd.DataFrame(index=df.index)
     result['ratio'] = df[col_a] / df[col_b]
+    result['price_a'] = df[col_a]
+    result['price_b'] = df[col_b]
     m, s = result['ratio'].mean(), result['ratio'].std()
     result['mean'] = m
     for i in [1, 2, 3]:
@@ -526,24 +528,52 @@ def make_detail_chart(data, title):
     return fig
 
 
-def calc_efficiency(data):
+PAIR_CONFIG = {
+    'IC/IF': {'point_value': 100, 'margin': 200000},
+    'IM/IC': {'point_value': 200, 'margin': 200000},
+}
+
+def calc_efficiency(data, pair=None):
     ANNUAL_OPP_RATE = 0.02  # 年化机会成本率 2%
     entry_levels = [3, 2, 1]
+    use_spread = pair in PAIR_CONFIG
+    if use_spread:
+        pv = PAIR_CONFIG[pair]['point_value']
+        mg = PAIR_CONFIG[pair]['margin']
     results = []
     for entry_z in entry_levels:
         for exit_z in range(entry_z - 1, -1, -1):
             trades, in_trade = [], False
             for i in range(len(data)):
-                z, ratio, date = data.iloc[i]['zscore'], data.iloc[i]['ratio'], data.index[i]
+                z, date = data.iloc[i]['zscore'], data.index[i]
                 if not in_trade:
-                    if z >= entry_z: in_trade, td, ed, er = True, 'short', date, ratio
-                    elif z <= -entry_z: in_trade, td, ed, er = True, 'long', date, ratio
+                    if z >= entry_z:
+                        in_trade, td, ed = True, 'short', date
+                        if use_spread:
+                            e_spread = data.iloc[i]['price_b'] - data.iloc[i]['price_a']
+                        else:
+                            er = data.iloc[i]['ratio']
+                    elif z <= -entry_z:
+                        in_trade, td, ed = True, 'long', date
+                        if use_spread:
+                            e_spread = data.iloc[i]['price_b'] - data.iloc[i]['price_a']
+                        else:
+                            er = data.iloc[i]['ratio']
                 else:
                     ex = (td=='short' and z<=exit_z) or (td=='long' and z>=-exit_z)
                     if ex:
-                        h = len(data.loc[ed:date])-1
-                        p = ((er-ratio)/er*100) if td=='short' else ((ratio-er)/er*100)
-                        trades.append({'h':h,'p':p}); in_trade=False
+                        h = len(data.loc[ed:date]) - 1
+                        if use_spread:
+                            x_spread = data.iloc[i]['price_b'] - data.iloc[i]['price_a']
+                            # short: 做空比值 = 做多价差(B-A)，价差涨赚钱
+                            # long:  做多比值 = 做空价差(B-A)，价差跌赚钱
+                            spread_chg = (x_spread - e_spread) if td == 'short' else (e_spread - x_spread)
+                            p = spread_chg * pv / mg * 100
+                        else:
+                            ratio = data.iloc[i]['ratio']
+                            p = ((er - ratio) / er * 100) if td == 'short' else ((ratio - er) / er * 100)
+                        trades.append({'h': h, 'p': p})
+                        in_trade = False
             if trades:
                 ap = np.mean([t['p'] for t in trades])
                 ah = np.mean([t['h'] for t in trades])
@@ -752,7 +782,7 @@ def render_detail(name, subtitle, data, mean, std, pair):
         """, unsafe_allow_html=True)
 
     st.markdown("##### 赚钱效率分析")
-    eff = calc_efficiency(data)
+    eff = calc_efficiency(data, pair)
     eff_rows = ""
     for _, row in eff.iterrows():
         eff_rows += f'<tr><td>{row["路径"]}</td><td class="num">{row["样本数"]}</td><td class="num">{row["均收益%"]}</td><td class="num">{row["均锁定天数"]}</td><td class="num">{row["机会成本%"]}</td><td class="num" style="color:#e0e0e0;font-weight:700">{row["期望净收益%"]}</td></tr>'
