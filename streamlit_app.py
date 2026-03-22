@@ -535,14 +535,16 @@ PAIR_CONFIG = {
 
 def calc_efficiency(data, pair=None):
     ANNUAL_OPP_RATE = 0.02  # 年化机会成本率 2%
-    entry_levels = [3, 2, 1]
+    entry_levels = [3.0, 2.0, 1.0]
     use_spread = pair in PAIR_CONFIG
     if use_spread:
         pv = PAIR_CONFIG[pair]['point_value']
         mg = PAIR_CONFIG[pair]['margin']
     results = []
     for entry_z in entry_levels:
-        for exit_z in range(entry_z - 1, -1, -1):
+        exit_candidates = np.arange(entry_z - 0.5, -0.1, -0.5)  # 3→2.5,2,1.5,1,0.5,0
+        for exit_z in exit_candidates:
+            exit_z = round(exit_z, 1)
             trades, in_trade = [], False
             for i in range(len(data)):
                 z, date = data.iloc[i]['zscore'], data.index[i]
@@ -578,9 +580,10 @@ def calc_efficiency(data, pair=None):
                 ap = np.mean([t['p'] for t in trades])
                 ah = np.mean([t['h'] for t in trades])
                 opp_cost = ah / 365 * ANNUAL_OPP_RATE * 100
-                exit_label = f'{exit_z}σ' if exit_z > 0 else '均值'
+                exit_label = f'{exit_z:g}σ' if exit_z > 0 else '均值'
+                entry_label = f'{entry_z:g}σ'
                 results.append({
-                    '路径': f'{entry_z}σ→{exit_label}',
+                    '路径': f'{entry_label}→{exit_label}',
                     '样本数': len(trades),
                     '均收益%': f'{ap:.1f}%',
                     '均锁定天数': f'{int(ah)}天',
