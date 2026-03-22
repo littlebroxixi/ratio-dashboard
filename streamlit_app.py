@@ -527,12 +527,11 @@ def make_detail_chart(data, title):
 
 
 def calc_efficiency(data):
-    entry_levels = [1.0, 1.5, 2.0, 2.5, 3.0]
-    exit_levels = [0, 0.5, 1.0]
+    ANNUAL_OPP_RATE = 0.02  # 年化机会成本率 2%
+    entry_levels = [3, 2, 1]
     results = []
     for entry_z in entry_levels:
-        for exit_z in exit_levels:
-            if exit_z >= entry_z: continue
+        for exit_z in range(entry_z - 1, -1, -1):
             trades, in_trade = [], False
             for i in range(len(data)):
                 z, ratio, date = data.iloc[i]['zscore'], data.iloc[i]['ratio'], data.index[i]
@@ -546,17 +545,19 @@ def calc_efficiency(data):
                         p = ((er-ratio)/er*100) if td=='short' else ((ratio-er)/er*100)
                         trades.append({'h':h,'p':p}); in_trade=False
             if trades:
-                w = len([t for t in trades if t['p']>0])
                 ap = np.mean([t['p'] for t in trades])
                 ah = np.mean([t['h'] for t in trades])
+                opp_cost = ah / 365 * ANNUAL_OPP_RATE * 100
+                exit_label = f'{exit_z}σ' if exit_z > 0 else '均值'
                 results.append({
-                    '入场':f'±{entry_z}σ','出场':f'±{exit_z}σ' if exit_z>0 else '均值',
-                    '次数':len(trades),'胜率':f'{w/len(trades)*100:.0f}%',
-                    '平均收益%':round(ap,2),'持有日':int(ah),
-                    '总收益%':round(sum(t['p'] for t in trades),2),
-                    '效率':round(ap/ah*100 if ah>0 else 0,2)
+                    '路径': f'{entry_z}σ→{exit_label}',
+                    '样本数': len(trades),
+                    '均收益%': f'{ap:.1f}%',
+                    '均锁定天数': f'{int(ah)}天',
+                    '机会成本%': f'{opp_cost:.1f}%',
+                    '期望净收益%': f'{ap - opp_cost:.1f}%',
                 })
-    return pd.DataFrame(results).sort_values('效率',ascending=False).reset_index(drop=True)
+    return pd.DataFrame(results)
 
 
 def get_ops_thresholds(pair):
@@ -753,12 +754,11 @@ def render_detail(name, subtitle, data, mean, std, pair):
     st.markdown("##### 赚钱效率分析")
     eff = calc_efficiency(data)
     eff_rows = ""
-    for i, row in eff.iterrows():
-        hl = ' class="eff-best"' if i == 0 else ''
-        eff_rows += f'<tr{hl}><td>{row["入场"]}</td><td>{row["出场"]}</td><td class="num">{row["次数"]}</td><td class="num">{row["胜率"]}</td><td class="num">{row["平均收益%"]}</td><td class="num">{row["持有日"]}</td><td class="num">{row["总收益%"]}</td><td class="num" style="color:#60a5fa;font-weight:700">{row["效率"]}</td></tr>'
+    for _, row in eff.iterrows():
+        eff_rows += f'<tr><td>{row["路径"]}</td><td class="num">{row["样本数"]}</td><td class="num">{row["均收益%"]}</td><td class="num">{row["均锁定天数"]}</td><td class="num">{row["机会成本%"]}</td><td class="num" style="color:#e0e0e0;font-weight:700">{row["期望净收益%"]}</td></tr>'
     st.markdown(f"""
     <table class="dark-table">
-        <thead><tr><th>入场</th><th>出场</th><th>次数</th><th>胜率</th><th>平均收益%</th><th>持有日</th><th>总收益%</th><th>效率</th></tr></thead>
+        <thead><tr><th>路径</th><th>样本数</th><th>均收益%</th><th>均锁定天数</th><th>机会成本%</th><th>期望净收益%</th></tr></thead>
         <tbody>{eff_rows}</tbody>
     </table>
     """, unsafe_allow_html=True)
