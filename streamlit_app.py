@@ -1,6 +1,6 @@
 """
 指数比值套利监控看板 v4
-IC/IF (中证500/沪深300) + IM/IC (中证1000/中证500) + IH/IC (上证50/中证500)
+IC/IF (中证500/沪深300) + IM/IC (中证1000/中证500) + IM/IF (中证1000/沪深300)
 streamlit run streamlit_app.py
 """
 
@@ -308,14 +308,13 @@ st.markdown("""
 def get_realtime_quotes():
     try:
         df = ak.stock_zh_index_spot_sina()
-        target = df[df['代码'].isin(['sh000300', 'sh000905', 'sh000852', 'sh000016'])]
+        target = df[df['代码'].isin(['sh000300', 'sh000905', 'sh000852'])]
         quotes = {}
         for _, row in target.iterrows():
             code = row['代码']
             if code == 'sh000300': quotes['hs300'] = float(row['最新价'])
             elif code == 'sh000905': quotes['zz500'] = float(row['最新价'])
             elif code == 'sh000852': quotes['zz1000'] = float(row['最新价'])
-            elif code == 'sh000016': quotes['sz50'] = float(row['最新价'])
         return quotes
     except Exception:
         return None
@@ -331,10 +330,7 @@ def load_data():
     zz1000 = ak.stock_zh_index_daily(symbol='sh000852')
     zz1000['date'] = pd.to_datetime(zz1000['date'])
     zz1000 = zz1000.set_index('date')[['close']].rename(columns={'close': 'zz1000'})
-    sz50 = ak.stock_zh_index_daily(symbol='sh000016')
-    sz50['date'] = pd.to_datetime(sz50['date'])
-    sz50 = sz50.set_index('date')[['close']].rename(columns={'close': 'sz50'})
-    df = hs300.join(zz500, how='inner').join(zz1000, how='inner').join(sz50, how='inner')
+    df = hs300.join(zz500, how='inner').join(zz1000, how='inner')
     df = df[df.index >= '2020-01-01'].copy()
     df.dropna(inplace=True)
     return df
@@ -373,9 +369,9 @@ def get_signal(z, pair):
     elif pair == "IM/IC":
         if z > 0: return "bearish", "↘", "中证1000 相对偏强 — 做空 IM + 做多 IC"
         else: return "bullish", "↗", "中证1000 相对偏弱 — 做多 IM + 做空 IC"
-    else:  # IH/IC
-        if z > 0: return "bearish", "↘", "上证50 相对偏强 — 做空 IH + 做多 IC"
-        else: return "bullish", "↗", "上证50 相对偏弱 — 做多 IH + 做空 IC"
+    else:  # IM/IF
+        if z > 0: return "bearish", "↘", "中证1000 相对偏强 — 做空 IM + 做多 IF"
+        else: return "bullish", "↗", "中证1000 相对偏弱 — 做多 IM + 做空 IF"
 
 
 def z_to_pct(z):
@@ -531,6 +527,7 @@ def make_detail_chart(data, title):
 PAIR_CONFIG = {
     'IC/IF': {'point_value': 100, 'margin': 200000},
     'IM/IC': {'point_value': 200, 'margin': 200000},
+    'IM/IF': {'point_value': 200, 'margin': 200000},
 }
 
 def calc_efficiency(data, pair=None):
@@ -614,14 +611,14 @@ def get_ops_thresholds(pair):
             ('减仓', 1.4, '7次均盈利'),
             ('清仓', 1.0, '效率走低'),
         ]
-    else:  # IH/IC
+    else:  # IM/IF
         return [
-            ('建仓', 2.4, '收益≈20% · 回撤<6.0%'),
-            ('重仓', 2.8, '收益≈23% · 回撤<2.8%'),
-            ('All-in', 3.0, '收益≈24% · 回撤≈0'),
+            ('建仓', 1.5, '收益≈39% · 6次全胜'),
+            ('重仓', 2.0, '收益≈64% · 零回撤'),
+            ('All-in', 2.5, '收益≈97% · 零回撤'),
         ], [
-            ('减仓', 2.0, '效率峰值'),
-            ('清仓', 1.5, '效率走低'),
+            ('减仓', 1.0, '已吃大部分利润'),
+            ('清仓', 0.5, '接近均值'),
         ]
 
 
@@ -807,10 +804,10 @@ def _load_all():
     df = load_data()
     realtime = get_realtime_quotes()
     is_realtime = False
-    if realtime and len(realtime) == 4:
+    if realtime and len(realtime) == 3:
         today = pd.Timestamp(datetime.now().date())
         row_data = {'hs300': realtime['hs300'], 'zz500': realtime['zz500'],
-                    'zz1000': realtime['zz1000'], 'sz50': realtime['sz50']}
+                    'zz1000': realtime['zz1000']}
         if today not in df.index:
             df = pd.concat([df, pd.DataFrame(row_data, index=[today])])
             is_realtime = True
@@ -821,7 +818,7 @@ def _load_all():
     st.session_state._is_realtime = is_realtime
     st.session_state._ic_if = calc_ratio(df, 'zz500', 'hs300')
     st.session_state._im_ic = calc_ratio(df, 'zz1000', 'zz500')
-    st.session_state._ih_ic = calc_ratio(df, 'sz50', 'zz500')
+    st.session_state._im_if = calc_ratio(df, 'zz1000', 'hs300')
 
 # 首次加载或手动刷新时才请求数据
 if '_df' not in st.session_state:
@@ -832,7 +829,7 @@ df = st.session_state._df
 is_realtime = st.session_state._is_realtime
 ic_if, ic_if_mean, ic_if_std = st.session_state._ic_if
 im_ic, im_ic_mean, im_ic_std = st.session_state._im_ic
-ih_ic, ih_ic_mean, ih_ic_std = st.session_state._ih_ic
+im_if, im_if_mean, im_if_std = st.session_state._im_if
 
 # ============ 首页 ============
 if st.session_state.page == 'home':
@@ -854,7 +851,7 @@ if st.session_state.page == 'home':
     with btn_col:
         if st.button("🔄 刷新", key="refresh_top", use_container_width=True):
             get_realtime_quotes.clear()
-            for k in ['_df','_is_realtime','_ic_if','_im_ic','_ih_ic']:
+            for k in ['_df','_is_realtime','_ic_if','_im_ic','_im_if']:
                 st.session_state.pop(k, None)
             st.rerun()
 
@@ -868,9 +865,9 @@ if st.session_state.page == 'home':
         if st.button("查看详细分析 →", key="b2", use_container_width=True):
             st.session_state.page = 'im_ic'; st.rerun()
     with col3:
-        render_card("IH / IC", "上证50 / 中证500", ih_ic, "IH/IC")
+        render_card("IM / IF", "中证1000 / 沪深300", im_if, "IM/IF")
         if st.button("查看详细分析 →", key="b3", use_container_width=True):
-            st.session_state.page = 'ih_ic'; st.rerun()
+            st.session_state.page = 'im_if'; st.rerun()
 
     st.markdown('<div class="footer">数据来源: AKShare · 仅供学习参考，不构成投资建议</div>', unsafe_allow_html=True)
 
@@ -885,7 +882,7 @@ elif st.session_state.page == 'im_ic':
     st.markdown(f'<div class="topbar-left"><h1>IM / IC 详细分析</h1><p>中证1000 / 中证500 · 2020年至今 · 全局标准差</p></div>', unsafe_allow_html=True)
     render_detail("IM/IC", "中证1000/中证500", im_ic, im_ic_mean, im_ic_std, "IM/IC")
 
-elif st.session_state.page == 'ih_ic':
+elif st.session_state.page == 'im_if':
     if st.button("← 返回首页"): st.session_state.page = 'home'; st.rerun()
-    st.markdown(f'<div class="topbar-left"><h1>IH / IC 详细分析</h1><p>上证50 / 中证500 · 2020年至今 · 全局标准差</p></div>', unsafe_allow_html=True)
-    render_detail("IH/IC", "上证50/中证500", ih_ic, ih_ic_mean, ih_ic_std, "IH/IC")
+    st.markdown(f'<div class="topbar-left"><h1>IM / IF 详细分析</h1><p>中证1000 / 沪深300 · 2020年至今 · 全局标准差</p></div>', unsafe_allow_html=True)
+    render_detail("IM/IF", "中证1000/沪深300", im_if, im_if_mean, im_if_std, "IM/IF")
