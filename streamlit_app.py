@@ -9,7 +9,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from analytics import WINDOW_YEARS, build_pair_models, consensus_snapshot
+from analytics import WINDOW_YEARS, build_pair_models, consensus_snapshot, slice_asof
 
 
 st.set_page_config(
@@ -151,6 +151,8 @@ st.markdown(
     margin: 2px 0 22px; padding: 11px 14px; color: #858984; background: #f6f6f1;
     border-left: 3px solid #d8b98b; border-radius: 4px 10px 10px 4px; font-size: .75rem;
 }
+.asof-note { color: #9a9d97; font-size: .74rem; padding-top: 1.85rem; }
+.asof-note strong { color: #5f8e6f; font-weight: 600; }
 .fixed-section { margin: 8px 0 12px; }
 .fixed-title { color: #303431; font-size: 1.32rem; font-weight: 650; margin: 0 0 4px; }
 .fixed-meta { color: #969993; font-size: .82rem; line-height: 1.65; }
@@ -163,6 +165,7 @@ st.markdown(
 
 [data-testid="stExpander"] details, h5 { color: #4c514d !important; }
 [data-testid="stExpander"] details { background: rgba(255,255,255,.55); border-color: #e7e6e0; }
+[data-testid="stDateInput"] input { background: #ffffff; border-color: #deddd7; color: #454945; }
 
 @media (max-width: 900px) {
     .metric-grid { grid-template-columns: repeat(2, 1fr); }
@@ -375,12 +378,12 @@ def render_pair_card(pair_key, pair):
     st.markdown(f'<div class="decision-box {tone}">{decision}</div>', unsafe_allow_html=True)
 
 
-def render_detail(pair_key, pair):
+def reset_asof_date(state_key, latest_date):
+    st.session_state[state_key] = latest_date
+
+
+def render_detail(pair_key, df):
     config = PAIR_CONFIG[pair_key]
-    base = pair["base"]
-    models = pair["models"]
-    mean_models = pair["mean_models"]
-    snapshot = consensus_snapshot(models)
     if st.button("← 返回首页", key=f"back_{pair_key}"):
         st.session_state.page = "home"
         st.rerun()
@@ -390,6 +393,47 @@ def render_detail(pair_key, pair):
         f'<p>{config["subtitle"]} · 左侧OLS趋势法 · 右侧平均值与普通标准差法</p></div>',
         unsafe_allow_html=True,
     )
+
+    latest_date = df.index[-1].date()
+    earliest_date = df.index[7 * 252 - 1].date()
+    date_key = f"asof_date_{pair_key}"
+    stored_date = st.session_state.get(date_key)
+    if stored_date is None or stored_date < earliest_date or stored_date > latest_date:
+        st.session_state[date_key] = latest_date
+
+    date_col, reset_col, status_col = st.columns([1.45, .8, 4.75], vertical_alignment="bottom")
+    with reset_col:
+        st.button(
+            "回到最新",
+            key=f"latest_{pair_key}",
+            on_click=reset_asof_date,
+            args=(date_key, latest_date),
+        )
+    with date_col:
+        requested_date = st.date_input(
+            "观察日期（截至日）",
+            min_value=earliest_date,
+            max_value=latest_date,
+            key=date_key,
+            format="YYYY-MM-DD",
+        )
+
+    asof_df, actual_date = slice_asof(df, requested_date)
+    pair = build_pair_models(asof_df, config["numerator"], config["denominator"])
+    base = pair["base"]
+    models = pair["models"]
+    mean_models = pair["mean_models"]
+    snapshot = consensus_snapshot(models)
+    adjusted = pd.Timestamp(requested_date).date() != actual_date.date()
+    status_text = (
+        f"{requested_date:%Y-%m-%d}不是交易日，已自动使用此前最近的交易日 "
+        f"<strong>{actual_date:%Y-%m-%d}</strong>"
+        if adjusted
+        else f"所有计算仅使用 <strong>{actual_date:%Y-%m-%d}</strong> 及以前的数据"
+    )
+    with status_col:
+        st.markdown(f'<div class="asof-note">{status_text}</div>', unsafe_allow_html=True)
+
     latest_ratio = float(base.iloc[-1]["ratio"])
     metric_values = (
         ("当前比值", f"{latest_ratio:.4f}"),
@@ -407,7 +451,8 @@ def render_detail(pair_key, pair):
     )
     st.markdown(f'<div class="metric-grid">{cards}</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="fixed-intro">每个时间窗口左右使用完全相同的样本和纵轴尺度。左侧用OLS直线作为中枢，'
+        f'<div class="fixed-intro">本页已切片到 {actual_date:%Y-%m-%d}，之后的数据完全不参与计算。'
+        '每个时间窗口左右使用完全相同的样本和纵轴尺度。左侧用OLS直线作为中枢，'
         '波动取OLS残差标准差；右侧用固定算术平均值作为中枢，波动取比值本身的普通样本标准差。</div>',
         unsafe_allow_html=True,
     )
@@ -473,6 +518,8 @@ def render_detail(pair_key, pair):
         st.markdown(
             """
             <div class="method-note">
+            <p><strong>观察日期切片：</strong>先删除观察日期之后的全部行情，再从剩余数据末端截取3年、5年和7年样本。
+            因此历史观察日的中枢、标准差和Z值不会受到未来行情影响；节假日自动回退至此前最近交易日。</p>
             <p><strong>固定窗口：</strong>3年、5年、7年分别截取最近756、1260、1764个交易日，
             每个区间独立做一次最小二乘拟合，不按日滚动重算。</p>
             <p><strong>趋势中枢：</strong>当前比值在该固定趋势线上的对应位置。</p>
@@ -567,4 +614,4 @@ if st.session_state.page == "home":
         unsafe_allow_html=True,
     )
 else:
-    render_detail(st.session_state.page, pairs[st.session_state.page])
+    render_detail(st.session_state.page, df)

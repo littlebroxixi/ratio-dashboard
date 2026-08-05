@@ -3,7 +3,13 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from analytics import build_pair_models, consensus_snapshot, fixed_mean_signal, fixed_ols_signal
+from analytics import (
+    build_pair_models,
+    consensus_snapshot,
+    fixed_mean_signal,
+    fixed_ols_signal,
+    slice_asof,
+)
 
 
 def sample_base(length=2100):
@@ -17,6 +23,15 @@ def sample_base(length=2100):
 
 
 class FixedOlsTests(unittest.TestCase):
+    def test_asof_slice_uses_previous_trading_day_and_excludes_future(self):
+        base = sample_base()
+        sliced, actual = slice_asof(base, "2022-06-11")
+
+        self.assertEqual(actual, pd.Timestamp("2022-06-10"))
+        self.assertEqual(sliced.index[-1], pd.Timestamp("2022-06-10"))
+        self.assertTrue((sliced.index <= actual).all())
+        self.assertLess(len(sliced), len(base))
+
     def test_latest_matches_direct_ols(self):
         base = sample_base()
         model = fixed_ols_signal(base, 3)

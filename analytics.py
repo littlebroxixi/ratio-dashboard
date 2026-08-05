@@ -31,6 +31,20 @@ class Consensus:
     label: str
 
 
+def slice_asof(frame: pd.DataFrame, requested_date) -> tuple[pd.DataFrame, pd.Timestamp]:
+    """Cut a time series at the latest available date on or before a request."""
+
+    if not isinstance(frame.index, pd.DatetimeIndex):
+        raise ValueError("frame index must be a DatetimeIndex")
+    ordered = frame.sort_index()
+    requested = pd.Timestamp(requested_date).normalize()
+    eligible = ordered.index[ordered.index.normalize() <= requested]
+    if len(eligible) == 0:
+        raise ValueError("requested date is before the first observation")
+    actual_date = eligible[-1]
+    return ordered.loc[:actual_date].copy(), actual_date
+
+
 def fixed_ols_signal(base: pd.DataFrame, years: int) -> pd.DataFrame:
     """Fit one OLS trend to the latest fixed N-year sample.
 

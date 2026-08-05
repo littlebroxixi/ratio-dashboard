@@ -1,4 +1,5 @@
 import unittest
+from datetime import date
 
 import akshare as ak
 import numpy as np
@@ -50,6 +51,13 @@ class DashboardSmokeTest(unittest.TestCase):
             self.assertIn("OLS趋势＋残差标准差", detail_text)
             self.assertIn("平均值＋普通标准差", detail_text)
             self.assertEqual(len(app.get("plotly_chart")), 6)
+            self.assertEqual(len(app.date_input), 1)
+
+            app.date_input[0].set_value(date(2023, 6, 10)).run(timeout=30)
+            self.assertEqual(len(app.exception), 0)
+            sliced_text = " ".join(item.value for item in app.markdown)
+            self.assertIn("2023-06-09", sliced_text)
+            self.assertIn("之后的数据完全不参与计算", sliced_text)
         finally:
             ak.stock_zh_index_daily = original_daily
             ak.stock_zh_index_spot_sina = original_spot
