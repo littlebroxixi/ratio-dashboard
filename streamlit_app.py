@@ -108,7 +108,7 @@ st.markdown(
 .window-cell.positive .window-z { color: #d37d5e; }
 
 .decision-box {
-    margin-top: 10px; padding: 11px 13px; border-radius: 11px;
+    margin: 10px 0 14px; padding: 11px 13px; border-radius: 11px;
     color: #858984; background: #fafaf7; border: 1px solid #ecebe5;
     font-size: .74rem; line-height: 1.55;
 }
@@ -123,7 +123,6 @@ st.markdown(
 .stButton > button:disabled { color: #b6b8b3; background: #f2f2ee; border-color: #e5e4df; }
 [class*="st-key-pair_card_"] {
     position: relative; cursor: pointer;
-    padding-bottom: 14px;
     transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
 }
 [class*="st-key-pair_card_"]:hover {
