@@ -14,6 +14,8 @@ from analytics import WINDOW_YEARS, build_pair_models, consensus_snapshot, slice
 
 CORE_WINDOW_YEARS = (3, 5, 7)
 DEFAULT_VISIBLE_YEARS = (1, 3, 5, 7)
+GLOBAL_WINDOW = "global"
+WINDOW_ORDER = (*WINDOW_YEARS, GLOBAL_WINDOW)
 
 
 st.set_page_config(
@@ -404,7 +406,7 @@ def toggle_visible_window(state_key, years):
             selected.remove(years)
     else:
         selected.add(years)
-    st.session_state[state_key] = sorted(selected)
+    st.session_state[state_key] = [option for option in WINDOW_ORDER if option in selected]
 
 
 def render_detail(pair_key, df):
@@ -426,9 +428,34 @@ def render_detail(pair_key, df):
     stored_date = st.session_state.get(date_key)
     if stored_date is None or stored_date < earliest_date or stored_date > latest_date:
         st.session_state[date_key] = latest_date
+    requested_date = st.session_state[date_key]
+    asof_df, actual_date = slice_asof(pair_history, requested_date)
+    pair = build_pair_models(asof_df, config["numerator"], config["denominator"])
+    base = pair["base"]
+    models = pair["models"]
+    mean_models = pair["mean_models"]
+    global_model = pair["global_model"]
+    global_mean_model = pair["global_mean_model"]
+    snapshot = consensus_snapshot({years: models[years] for years in CORE_WINDOW_YEARS})
+    visible_key = f"visible_windows_{pair_key}"
+    available_options = [*models.keys(), GLOBAL_WINDOW]
+    if visible_key not in st.session_state:
+        st.session_state[visible_key] = [
+            years for years in DEFAULT_VISIBLE_YEARS if years in models
+        ]
+    selected_windows = [
+        option for option in WINDOW_ORDER
+        if option in st.session_state[visible_key] and option in available_options
+    ]
+    if not selected_windows:
+        selected_windows = [
+            years for years in DEFAULT_VISIBLE_YEARS if years in models
+        ]
+    if selected_windows != st.session_state[visible_key]:
+        st.session_state[visible_key] = selected_windows
 
     date_col, reset_col, *window_cols = st.columns(
-        [2.6, 1.05, .7, .7, .7, .7, .8, .8, .8], vertical_alignment="bottom"
+        [2.6, 1.05, *([.82] * len(available_options))], vertical_alignment="bottom"
     )
     with reset_col:
         st.button(
@@ -438,44 +465,22 @@ def render_detail(pair_key, df):
             args=(date_key, latest_date),
         )
     with date_col:
-        requested_date = st.date_input(
+        st.date_input(
             "观察日期（截至日）",
             min_value=earliest_date,
             max_value=latest_date,
             key=date_key,
             format="YYYY-MM-DD",
         )
-    asof_df, actual_date = slice_asof(pair_history, requested_date)
-    pair = build_pair_models(asof_df, config["numerator"], config["denominator"])
-    base = pair["base"]
-    models = pair["models"]
-    mean_models = pair["mean_models"]
-    snapshot = consensus_snapshot({years: models[years] for years in CORE_WINDOW_YEARS})
-    visible_key = f"visible_windows_{pair_key}"
-    available_years = set(models)
-    if visible_key not in st.session_state:
-        st.session_state[visible_key] = [
-            years for years in DEFAULT_VISIBLE_YEARS if years in available_years
-        ]
-    selected_years = sorted(
-        years for years in st.session_state[visible_key] if years in available_years
-    )
-    if not selected_years:
-        selected_years = [
-            years for years in DEFAULT_VISIBLE_YEARS if years in available_years
-        ]
-    if selected_years != st.session_state[visible_key]:
-        st.session_state[visible_key] = selected_years
-
-    for column, years in zip(window_cols, WINDOW_YEARS):
+    for column, option in zip(window_cols, available_options):
+        label = "全局" if option == GLOBAL_WINDOW else f"{option}年"
         with column:
             st.button(
-                f"{years}年",
-                key=f"window_toggle_{pair_key}_{years}",
-                type="primary" if years in selected_years else "secondary",
-                disabled=years not in available_years,
+                label,
+                key=f"window_toggle_{pair_key}_{option}",
+                type="primary" if option in selected_windows else "secondary",
                 on_click=toggle_visible_window,
-                args=(visible_key, years),
+                args=(visible_key, option),
             )
     adjusted = pd.Timestamp(requested_date).date() != actual_date.date()
     status_text = (
@@ -484,17 +489,19 @@ def render_detail(pair_key, df):
         if adjusted
         else f"所有计算仅使用 <strong>{actual_date:%Y-%m-%d}</strong> 及以前的数据"
     )
-    unavailable_years = [years for years in WINDOW_YEARS if years not in available_years]
-    if unavailable_years:
-        status_text += "；" + "、".join(f"{years}年" for years in unavailable_years) + "历史不足，暂不可用"
+    global_years = len(base) / 252
+    status_text += f"；全局窗口使用全部 {len(base):,} 个交易日（约{global_years:.1f}年）"
     st.markdown(f'<div class="asof-note">{status_text}</div>', unsafe_allow_html=True)
 
     latest_ratio = float(base.iloc[-1]["ratio"])
     metric_values = [("当前比值", f"{latest_ratio:.4f}")]
-    for years in selected_years:
+    for option in selected_windows:
+        label = "全局" if option == GLOBAL_WINDOW else f"{option}年"
+        model = global_model if option == GLOBAL_WINDOW else models[option]
+        mean_model = global_mean_model if option == GLOBAL_WINDOW else mean_models[option]
         metric_values.extend((
-            (f"{years}年 OLS Z", f'{models[years].iloc[-1]["zscore"]:+.2f}σ'),
-            (f"{years}年 均值Z", f'{mean_models[years].iloc[-1]["zscore"]:+.2f}σ'),
+            (f"{label} OLS Z", f'{model.iloc[-1]["zscore"]:+.2f}σ'),
+            (f"{label} 均值Z", f'{mean_model.iloc[-1]["zscore"]:+.2f}σ'),
         ))
     metric_values.append(
         ("OLS多周期状态", f"{snapshot.label} · {snapshot.confirmation_count}/3")
@@ -504,23 +511,29 @@ def render_detail(pair_key, df):
         for label, value in metric_values
     )
     st.markdown(f'<div class="metric-grid">{cards}</div>', unsafe_allow_html=True)
+    selected_labels = [
+        "全局" if option == GLOBAL_WINDOW else f"{option}年" for option in selected_windows
+    ]
     st.markdown(
         f'<div class="fixed-intro">本页已切片到 {actual_date:%Y-%m-%d}，之后的数据完全不参与计算。'
-        f'当前展示 {"、".join(f"{years}年" for years in selected_years)} 窗口。'
+        f'当前展示 {"、".join(selected_labels)} 窗口。'
         '每个时间窗口左右使用完全相同的样本和纵轴尺度。左侧用OLS直线作为中枢，'
         '波动取OLS残差标准差；右侧用固定算术平均值作为中枢，波动取比值本身的普通样本标准差。</div>',
         unsafe_allow_html=True,
     )
 
-    for position, years in enumerate(selected_years):
-        ols_model = models[years]
-        mean_model = mean_models[years]
+    for position, option in enumerate(selected_windows):
+        is_global = option == GLOBAL_WINDOW
+        ols_model = global_model if is_global else models[option]
+        mean_model = global_mean_model if is_global else mean_models[option]
         ols_latest = ols_model.iloc[-1]
         mean_latest = mean_model.iloc[-1]
+        section_title = "全局窗口" if is_global else f"{option}年固定窗口"
+        sample_kind = "全部可用数据" if is_global else f"{option * 252:,}日固定样本"
         st.markdown(
-            f'<div class="fixed-section"><div class="fixed-title">{years}年固定窗口</div>'
+            f'<div class="fixed-section"><div class="fixed-title">{section_title}</div>'
             f'<div class="fixed-meta">共同样本 {ols_model.index[0]:%Y-%m-%d} 至 {ols_model.index[-1]:%Y-%m-%d}'
-            f'｜{len(ols_model):,}个交易日｜左右图使用相同纵轴</div></div>',
+            f'｜{len(ols_model):,}个交易日｜{sample_kind}｜左右图使用相同纵轴</div></div>',
             unsafe_allow_html=True,
         )
         y_range = comparison_y_range(ols_model, mean_model)
@@ -566,18 +579,20 @@ def render_detail(pair_key, df):
                 width="stretch",
                 config={"displayModeBar": True, "displaylogo": False},
             )
-        if position < len(selected_years) - 1:
+        if position < len(selected_windows) - 1:
             st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
     with st.expander("计算口径与使用说明"):
         st.markdown(
             """
             <div class="method-note">
-            <p><strong>观察日期切片：</strong>先删除观察日期之后的全部行情，再从剩余数据末端截取3年、5年和7年样本。
+            <p><strong>观察日期切片：</strong>先删除观察日期之后的全部行情，再从剩余数据末端截取所选固定窗口。
             因此历史观察日的中枢、标准差和Z值不会受到未来行情影响；节假日自动回退至此前最近交易日。</p>
             <p><strong>固定窗口：</strong>可选择1、3、5、7、10、15和20年；每个窗口截取最近
             <code>年数 × 252</code>个交易日，独立计算中枢和波动率。高亮按钮表示展示，灰色表示隐藏；
-            历史数据不足的窗口不可点击。</p>
+            历史数据不足的年份按钮不显示。</p>
+            <p><strong>全局窗口：</strong>不强行凑15年或20年，而是使用观察日期以前能够取得的全部历史数据；
+            左右两种方法仍使用完全相同的样本。</p>
             <p><strong>趋势中枢：</strong>当前比值在该固定趋势线上的对应位置。</p>
             <p><strong>残差标准差：</strong><code>sqrt(SSE / (N - 2))</code>，减去2是因为趋势线估计了截距和斜率。</p>
             <p><strong>平均值法：</strong>右侧中枢是固定窗口内全部比值的算术平均值；普通样本标准差为
@@ -638,10 +653,10 @@ if st.session_state.page == "home":
         <div class="topbar">
             <div>
                 <h1>指数比值趋势偏离看板</h1>
-                <p>用固定OLS窗口对照当前比值位置，详情页可切换1年至20年周期</p>
+                <p>用固定OLS窗口对照当前比值位置，详情页可切换1年至20年及全局周期</p>
             </div>
             <div class="topbar-meta">
-                <span class="model-badge">1 / 3 / 5 / 7 / 10 / 15 / 20年</span><br>
+                <span class="model-badge">1 / 3 / 5 / 7 / 10 / 15 / 20年 / 全局</span><br>
                 {live} · 数据截至 {df.index[-1].strftime('%Y-%m-%d')} · {len(df):,}个行情日期
             </div>
         </div>

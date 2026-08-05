@@ -45,6 +45,35 @@ def slice_asof(frame: pd.DataFrame, requested_date) -> tuple[pd.DataFrame, pd.Ti
     return ordered.loc[:actual_date].copy(), actual_date
 
 
+def _ols_from_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Fit one OLS trend and residual channel to an already-selected sample."""
+
+    frame = frame.copy()
+    length = len(frame)
+    if length < 3:
+        raise ValueError("OLS model needs at least 3 observations")
+    y = frame["ratio"].to_numpy(dtype=float)
+    x = np.arange(length, dtype=float)
+    x_mean = x.mean()
+    y_mean = y.mean()
+    sxx = np.sum((x - x_mean) ** 2)
+    slope = np.sum((x - x_mean) * (y - y_mean)) / sxx
+    intercept = y_mean - slope * x_mean
+    center = intercept + slope * x
+    residual = y - center
+    residual_sigma = np.sqrt(np.sum(residual**2) / (length - 2))
+
+    frame["center"] = center
+    frame["residual_sigma"] = residual_sigma
+    frame["slope_year"] = slope * TRADING_DAYS
+    frame["residual"] = residual
+    frame["zscore"] = residual / residual_sigma
+    for level in (1, 2, 3):
+        frame[f"upper_{level}"] = center + level * residual_sigma
+        frame[f"lower_{level}"] = center - level * residual_sigma
+    return frame
+
+
 def fixed_ols_signal(base: pd.DataFrame, years: int) -> pd.DataFrame:
     """Fit one OLS trend to the latest fixed N-year sample.
 
@@ -64,26 +93,32 @@ def fixed_ols_signal(base: pd.DataFrame, years: int) -> pd.DataFrame:
     frame = base.sort_index().tail(window).copy()
     if len(frame) < window:
         raise ValueError(f"{years}y model needs at least {window} observations")
+    return _ols_from_frame(frame)
 
+
+def global_ols_signal(base: pd.DataFrame) -> pd.DataFrame:
+    """Fit one OLS trend to every available observation in the as-of slice."""
+
+    return _ols_from_frame(base.sort_index())
+
+
+def _mean_from_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Fit one constant mean and ordinary sample deviation to a sample."""
+
+    frame = frame.copy()
+    if len(frame) < 2:
+        raise ValueError("mean model needs at least 2 observations")
     y = frame["ratio"].to_numpy(dtype=float)
-    x = np.arange(window, dtype=float)
-    x_mean = x.mean()
-    y_mean = y.mean()
-    sxx = np.sum((x - x_mean) ** 2)
-    slope = np.sum((x - x_mean) * (y - y_mean)) / sxx
-    intercept = y_mean - slope * x_mean
-    center = intercept + slope * x
-    residual = y - center
-    residual_sigma = np.sqrt(np.sum(residual**2) / (window - 2))
-
+    center = float(np.mean(y))
+    sigma = float(np.std(y, ddof=1))
     frame["center"] = center
-    frame["residual_sigma"] = residual_sigma
-    frame["slope_year"] = slope * TRADING_DAYS
-    frame["residual"] = residual
-    frame["zscore"] = residual / residual_sigma
+    frame["residual_sigma"] = sigma
+    frame["slope_year"] = 0.0
+    frame["residual"] = y - center
+    frame["zscore"] = frame["residual"] / sigma
     for level in (1, 2, 3):
-        frame[f"upper_{level}"] = center + level * residual_sigma
-        frame[f"lower_{level}"] = center - level * residual_sigma
+        frame[f"upper_{level}"] = center + level * sigma
+        frame[f"lower_{level}"] = center - level * sigma
     return frame
 
 
@@ -105,19 +140,13 @@ def fixed_mean_signal(base: pd.DataFrame, years: int) -> pd.DataFrame:
     frame = base.sort_index().tail(window).copy()
     if len(frame) < window:
         raise ValueError(f"{years}y model needs at least {window} observations")
+    return _mean_from_frame(frame)
 
-    y = frame["ratio"].to_numpy(dtype=float)
-    center = float(np.mean(y))
-    sigma = float(np.std(y, ddof=1))
-    frame["center"] = center
-    frame["residual_sigma"] = sigma
-    frame["slope_year"] = 0.0
-    frame["residual"] = y - center
-    frame["zscore"] = frame["residual"] / sigma
-    for level in (1, 2, 3):
-        frame[f"upper_{level}"] = center + level * sigma
-        frame[f"lower_{level}"] = center - level * sigma
-    return frame
+
+def global_mean_signal(base: pd.DataFrame) -> pd.DataFrame:
+    """Evaluate every available observation around one arithmetic mean."""
+
+    return _mean_from_frame(base.sort_index())
 
 
 def build_pair_models(
@@ -136,7 +165,13 @@ def build_pair_models(
     available_windows = tuple(years for years in windows if len(base) >= years * TRADING_DAYS)
     models = {years: fixed_ols_signal(base, years) for years in available_windows}
     mean_models = {years: fixed_mean_signal(base, years) for years in available_windows}
-    return {"base": base, "models": models, "mean_models": mean_models}
+    return {
+        "base": base,
+        "models": models,
+        "mean_models": mean_models,
+        "global_model": global_ols_signal(base),
+        "global_mean_model": global_mean_signal(base),
+    }
 
 
 def consensus_snapshot(models: dict[int, pd.DataFrame]) -> Consensus:

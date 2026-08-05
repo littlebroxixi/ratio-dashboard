@@ -53,8 +53,10 @@ class DashboardSmokeTest(unittest.TestCase):
             self.assertEqual(len(app.get("plotly_chart")), 8)
             self.assertEqual(len(app.date_input), 1)
             button_labels = {button.label for button in app.button}
-            for label in ("回到最新", "1年", "3年", "5年", "7年", "10年", "15年", "20年"):
+            for label in ("回到最新", "1年", "3年", "5年", "7年", "全局"):
                 self.assertIn(label, button_labels)
+            for label in ("10年", "15年", "20年"):
+                self.assertNotIn(label, button_labels)
 
             app.date_input[0].set_value(date(2023, 6, 10)).run(timeout=30)
             self.assertEqual(len(app.exception), 0)
@@ -67,6 +69,12 @@ class DashboardSmokeTest(unittest.TestCase):
             self.assertEqual(len(app.get("plotly_chart")), 6)
             hidden_text = " ".join(item.value for item in app.markdown)
             self.assertNotIn("1年固定窗口", hidden_text)
+
+            next(button for button in app.button if button.label == "全局").click().run(timeout=30)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.get("plotly_chart")), 8)
+            global_text = " ".join(item.value for item in app.markdown)
+            self.assertIn("全局窗口", global_text)
         finally:
             ak.stock_zh_index_daily = original_daily
             ak.stock_zh_index_spot_sina = original_spot
