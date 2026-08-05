@@ -51,6 +51,7 @@ class DashboardSmokeTest(unittest.TestCase):
             self.assertIn("IC / IF 固定窗口分析", app.markdown[1].value)
             self.assertEqual(len(app.radio), 0)
             detail_text = " ".join(item.value for item in app.markdown)
+            self.assertIn('class="metric-item metric-pair"', detail_text)
             for label in ("1年固定窗口", "3年固定窗口", "5年固定窗口", "7年固定窗口"):
                 self.assertIn(label, detail_text)
             self.assertIn("OLS趋势＋残差标准差", detail_text)

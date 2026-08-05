@@ -156,7 +156,10 @@ st.markdown(
 .detail-head { margin: 4px 0 12px; }
 .detail-head h1 { margin: 0; color: #303431; font-size: 1.55rem; font-weight: 650; }
 .detail-head p { margin: 5px 0 0; color: #969993; font-size: .8rem; }
-.metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0 18px; }
+.metric-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 10px; margin: 14px 0 18px;
+}
 .metric-item {
     padding: 13px 12px; border-radius: 12px; text-align: center;
     background: rgba(255,255,255,.78); border: 1px solid #e8e7e1;
@@ -164,6 +167,11 @@ st.markdown(
 }
 .metric-label { color: #9a9d97; font-size: .66rem; }
 .metric-value { color: #414541; font-size: 1.12rem; font-weight: 650; margin-top: 5px; }
+.metric-pair-title { color: #777b76; font-size: .69rem; font-weight: 600; margin-bottom: 8px; }
+.metric-pair-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.metric-pair-values > div + div { border-left: 1px solid #ebeae5; }
+.metric-sub-label { color: #a3a69f; font-size: .61rem; }
+.metric-sub-value { color: #414541; font-size: 1rem; font-weight: 650; margin-top: 3px; }
 
 .dark-table {
     width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden;
@@ -506,23 +514,28 @@ def render_detail(pair_key, df):
     st.markdown(f'<div class="asof-note">{status_text}</div>', unsafe_allow_html=True)
 
     latest_ratio = float(base.iloc[-1]["ratio"])
-    metric_values = [("当前比值", f"{latest_ratio:.4f}")]
+    metric_cards = [
+        f'<div class="metric-item"><div class="metric-label">当前比值</div>'
+        f'<div class="metric-value">{latest_ratio:.4f}</div></div>'
+    ]
     for option in selected_windows:
         label = "全局" if option == GLOBAL_WINDOW else f"{option}年"
         model = global_model if option == GLOBAL_WINDOW else models[option]
         mean_model = global_mean_model if option == GLOBAL_WINDOW else mean_models[option]
-        metric_values.extend((
-            (f"{label} OLS Z", f'{model.iloc[-1]["zscore"]:+.2f}σ'),
-            (f"{label} 均值Z", f'{mean_model.iloc[-1]["zscore"]:+.2f}σ'),
-        ))
-    metric_values.append(
-        ("OLS多周期状态", f"{snapshot.label} · {snapshot.confirmation_count}/3")
+        metric_cards.append(
+            f'<div class="metric-item metric-pair"><div class="metric-pair-title">{label}</div>'
+            f'<div class="metric-pair-values">'
+            f'<div><div class="metric-sub-label">OLS Z</div>'
+            f'<div class="metric-sub-value">{model.iloc[-1]["zscore"]:+.2f}σ</div></div>'
+            f'<div><div class="metric-sub-label">均值 Z</div>'
+            f'<div class="metric-sub-value">{mean_model.iloc[-1]["zscore"]:+.2f}σ</div></div>'
+            f'</div></div>'
+        )
+    metric_cards.append(
+        f'<div class="metric-item"><div class="metric-label">OLS多周期状态</div>'
+        f'<div class="metric-value">{snapshot.label} · {snapshot.confirmation_count}/3</div></div>'
     )
-    cards = "".join(
-        f'<div class="metric-item"><div class="metric-label">{label}</div><div class="metric-value">{value}</div></div>'
-        for label, value in metric_values
-    )
-    st.markdown(f'<div class="metric-grid">{cards}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-grid">{"".join(metric_cards)}</div>', unsafe_allow_html=True)
     selected_labels = [
         "全局" if option == GLOBAL_WINDOW else f"{option}年" for option in selected_windows
     ]
