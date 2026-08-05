@@ -121,6 +121,25 @@ st.markdown(
 }
 .stButton > button:hover { border-color: #bcd6c2; color: #3f7652; }
 .stButton > button:disabled { color: #b6b8b3; background: #f2f2ee; border-color: #e5e4df; }
+[class*="st-key-pair_card_"] {
+    position: relative; cursor: pointer;
+    transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+[class*="st-key-pair_card_"]:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 34px rgba(71,76,70,.09);
+    border-color: #d9ddd6 !important;
+}
+[class*="st-key-pair_card_"] [class*="st-key-detail_"] {
+    position: absolute; inset: 0; z-index: 20; margin: 0;
+}
+[class*="st-key-pair_card_"] [class*="st-key-detail_"] [data-testid="stButton"] {
+    width: 100%; height: 100%;
+}
+[class*="st-key-pair_card_"] [class*="st-key-detail_"] button {
+    width: 100%; height: 100%; min-height: 100%; padding: 0;
+    opacity: 0; border: 0; cursor: pointer;
+}
 [class*="st-key-window_toggle_"] [data-testid="stBaseButton-primary"] {
     color: #ffffff !important; background: #d78963 !important; border-color: #d78963 !important;
     box-shadow: 0 3px 10px rgba(215,137,99,.18);
@@ -663,9 +682,9 @@ if st.session_state.page == "home":
     columns = st.columns(3, gap="medium")
     for column, (pair_key, pair) in zip(columns, pairs.items()):
         with column:
-            with st.container(border=True):
+            with st.container(border=True, key=f"pair_card_{pair_key}"):
                 render_pair_card(pair_key, pair)
-                if st.button("查看全部固定窗口 →", key=f"detail_{pair_key}"):
+                if st.button(f"打开 {PAIR_CONFIG[pair_key]['name']} 详情", key=f"detail_{pair_key}"):
                     st.session_state.page = pair_key
                     st.rerun()
 else:
