@@ -1,7 +1,7 @@
-"""Rolling OLS analytics for index-ratio monitoring.
+"""OLS analytics for index-ratio monitoring.
 
-Each signal at date t is estimated only from observations before t.  The
-regression residual scale is the standard OLS residual error:
+Each 3/5/7-year view fits one trend to the latest fixed sample.  The regression
+residual scale is the standard OLS residual error:
 
     sigma = sqrt(SSE / (n - 2))
 
@@ -28,12 +28,12 @@ class Consensus:
     label: str
 
 
-def rolling_ols_signal(base: pd.DataFrame, years: int) -> pd.DataFrame:
-    """Return one-step-ahead rolling OLS signals for a ratio DataFrame.
+def fixed_ols_signal(base: pd.DataFrame, years: int) -> pd.DataFrame:
+    """Fit one OLS trend to the latest fixed N-year sample.
 
-    ``base`` must contain ``ratio``, ``price_a`` and ``price_b``.  At each date
-    the preceding ``years * 252`` observations are fitted, excluding the
-    evaluation date itself.
+    The returned trend, residual scale and Z-scores all use the same final
+    ``years * 252`` observations.  This is a current cross-window snapshot,
+    not a point-in-time backtest signal for earlier dates in the sample.
     """
 
     if years <= 0:
@@ -43,64 +43,31 @@ def rolling_ols_signal(base: pd.DataFrame, years: int) -> pd.DataFrame:
     if missing:
         raise ValueError(f"missing columns: {sorted(missing)}")
 
-    frame = base.sort_index().copy()
-    y = frame["ratio"].to_numpy(dtype=float)
-    length = len(y)
     window = years * TRADING_DAYS
-    if length <= window:
-        raise ValueError(f"{years}y model needs more than {window} observations")
+    frame = base.sort_index().tail(window).copy()
+    if len(frame) < window:
+        raise ValueError(f"{years}y model needs at least {window} observations")
 
-    global_x = np.arange(length, dtype=float)
-    prefix_y = np.concatenate(([0.0], np.cumsum(y)))
-    prefix_yy = np.concatenate(([0.0], np.cumsum(y * y)))
-    prefix_iy = np.concatenate(([0.0], np.cumsum(global_x * y)))
-
-    center = np.full(length, np.nan)
-    sigma = np.full(length, np.nan)
-    slope_year = np.full(length, np.nan)
-
-    n = float(window)
-    sum_x = n * (n - 1.0) / 2.0
-    sum_x2 = n * (n - 1.0) * (2.0 * n - 1.0) / 6.0
-    x_mean = (n - 1.0) / 2.0
-    sxx = n * (n * n - 1.0) / 12.0
-
-    for end in range(window, length):
-        start = end - window
-        sum_y = prefix_y[end] - prefix_y[start]
-        sum_yy = prefix_yy[end] - prefix_yy[start]
-        sum_global_iy = prefix_iy[end] - prefix_iy[start]
-        sum_xy = sum_global_iy - start * sum_y
-
-        mean_y = sum_y / n
-        slope = (sum_xy - x_mean * sum_y) / sxx
-        intercept = mean_y - slope * x_mean
-        predicted = intercept + slope * n
-
-        sse = (
-            sum_yy
-            - 2.0 * intercept * sum_y
-            - 2.0 * slope * sum_xy
-            + n * intercept * intercept
-            + 2.0 * intercept * slope * sum_x
-            + slope * slope * sum_x2
-        )
-        residual_sigma = np.sqrt(max(0.0, sse) / (window - 2))
-
-        center[end] = predicted
-        sigma[end] = residual_sigma
-        slope_year[end] = slope * TRADING_DAYS
+    y = frame["ratio"].to_numpy(dtype=float)
+    x = np.arange(window, dtype=float)
+    x_mean = x.mean()
+    y_mean = y.mean()
+    sxx = np.sum((x - x_mean) ** 2)
+    slope = np.sum((x - x_mean) * (y - y_mean)) / sxx
+    intercept = y_mean - slope * x_mean
+    center = intercept + slope * x
+    residual = y - center
+    residual_sigma = np.sqrt(np.sum(residual**2) / (window - 2))
 
     frame["center"] = center
-    frame["residual_sigma"] = sigma
-    frame["slope_year"] = slope_year
-    frame["residual"] = frame["ratio"] - frame["center"]
-    frame["zscore"] = frame["residual"] / frame["residual_sigma"]
+    frame["residual_sigma"] = residual_sigma
+    frame["slope_year"] = slope * TRADING_DAYS
+    frame["residual"] = residual
+    frame["zscore"] = residual / residual_sigma
     for level in (1, 2, 3):
-        frame[f"upper_{level}"] = frame["center"] + level * frame["residual_sigma"]
-        frame[f"lower_{level}"] = frame["center"] - level * frame["residual_sigma"]
-
-    return frame.dropna(subset=["center", "residual_sigma", "zscore"])
+        frame[f"upper_{level}"] = center + level * residual_sigma
+        frame[f"lower_{level}"] = center - level * residual_sigma
+    return frame
 
 
 def build_pair_models(
@@ -109,14 +76,14 @@ def build_pair_models(
     denominator: str,
     windows: tuple[int, ...] = WINDOW_YEARS,
 ) -> dict:
-    """Build the raw ratio and rolling OLS models for an index pair."""
+    """Build the raw ratio and latest fixed-window OLS models for a pair."""
 
     base = pd.DataFrame(index=df.index)
     base["ratio"] = df[numerator] / df[denominator]
     base["price_a"] = df[numerator]
     base["price_b"] = df[denominator]
     base = base.replace([np.inf, -np.inf], np.nan).dropna().sort_index()
-    models = {years: rolling_ols_signal(base, years) for years in windows}
+    models = {years: fixed_ols_signal(base, years) for years in windows}
     return {"base": base, "models": models}
 
 

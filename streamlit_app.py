@@ -149,16 +149,19 @@ st.markdown(
 .dark-table .positive { color: #d37d5e; font-weight: 600; }
 .dark-table .selected td { background: #f0f7f2; }
 
-.warmup-note {
-    margin: -5px 0 14px; padding: 10px 13px; color: #858984; background: #f6f6f1;
+.fixed-intro {
+    margin: 2px 0 22px; padding: 11px 14px; color: #858984; background: #f6f6f1;
     border-left: 3px solid #d8b98b; border-radius: 4px 10px 10px 4px; font-size: .75rem;
 }
+.fixed-section { margin: 8px 0 12px; }
+.fixed-title { color: #303431; font-size: 1.32rem; font-weight: 650; margin: 0 0 4px; }
+.fixed-meta { color: #969993; font-size: .82rem; line-height: 1.65; }
+.section-divider { height: 1px; background: #e5e5df; margin: 30px 0 26px; }
 .method-note { color: #737772; font-size: .78rem; line-height: 1.75; }
 .method-note code { color: #4f9667; background: #edf6ef; }
 .footer { color: #b0b2ad; text-align: center; font-size: .68rem; padding: 24px 0 10px; }
 
-[data-testid="stRadio"] label, [data-testid="stExpander"] details, h5 { color: #4c514d !important; }
-[data-testid="stRadio"] [role="radiogroup"] { gap: 1.2rem; }
+[data-testid="stExpander"] details, h5 { color: #4c514d !important; }
 [data-testid="stExpander"] details { background: rgba(255,255,255,.55); border-color: #e7e6e0; }
 
 @media (max-width: 900px) {
@@ -259,7 +262,7 @@ def make_sparkline(model):
     return fig
 
 
-def make_detail_chart(base, model, title):
+def make_detail_chart(model, title):
     fig = make_subplots(
         rows=2, cols=1, shared_xaxes=True,
         row_heights=[0.69, 0.31], vertical_spacing=0.075,
@@ -281,12 +284,12 @@ def make_detail_chart(base, model, title):
             name=f"±{level}残差σ", showlegend=False, hoverinfo="skip",
         ), row=1, col=1)
     fig.add_trace(go.Scatter(
-        x=model.index, y=model["center"], name="滚动OLS中枢",
+        x=model.index, y=model["center"], name="OLS趋势线",
         line=dict(color="#58c878", width=2.0, dash="dash"),
         hovertemplate="趋势中枢 %{y:.4f}<extra></extra>",
     ), row=1, col=1)
     fig.add_trace(go.Scatter(
-        x=base.index, y=base["ratio"], name="实际比值",
+        x=model.index, y=model["ratio"], name="实际比值",
         line=dict(color="#d78963", width=1.8),
         hovertemplate="比值 %{y:.4f}<extra></extra>",
     ), row=1, col=1)
@@ -306,7 +309,7 @@ def make_detail_chart(base, model, title):
     fig.add_hline(y=0, line_color="#cfd3ce", line_width=.7, row=2, col=1)
     fig.update_layout(
         title=dict(text=title, font=dict(color="#3d423e", size=16), x=.03, y=.98),
-        height=660, template="plotly_white",
+        height=610, template="plotly_white",
         paper_bgcolor="#fbfbf8", plot_bgcolor="#fbfbf8",
         legend=dict(
             orientation="h", y=1.055, x=.03,
@@ -331,7 +334,7 @@ def render_window_grid(models):
         sign_class = "positive" if zscore > 0 else "negative" if zscore < 0 else ""
         cells.append(
             f'<div class="window-cell {level_class} {sign_class}">'
-            f'<div class="window-label">{years}年窗口</div>'
+            f'<div class="window-label">{years}年固定</div>'
             f'<div class="window-z">{zscore:+.2f}σ</div>'
             f'<div class="window-meta">斜率 {latest["slope_year"]:+.3f}/年</div>'
             f'</div>'
@@ -372,43 +375,6 @@ def render_pair_card(pair_key, pair):
     st.markdown(f'<div class="decision-box {tone}">{decision}</div>', unsafe_allow_html=True)
 
 
-def multi_window_table(models, selected_years):
-    rows = []
-    for years in WINDOW_YEARS:
-        latest = models[years].iloc[-1]
-        zscore = float(latest["zscore"])
-        zone, _ = signal_class(zscore)
-        zclass = "positive" if zscore > 0 else "negative" if zscore < 0 else ""
-        selected = "selected" if years == selected_years else ""
-        rows.append(
-            f'<tr class="{selected}"><td>{years}年</td>'
-            f'<td class="num">{latest["center"]:.4f}</td>'
-            f'<td class="num">{latest["residual_sigma"]:.4f}</td>'
-            f'<td class="num">{latest["slope_year"]:+.4f}</td>'
-            f'<td class="num {zclass}">{zscore:+.2f}σ</td><td>{zone}</td></tr>'
-        )
-    return (
-        '<table class="dark-table"><thead><tr><th>窗口</th><th class="num">趋势中枢</th>'
-        '<th class="num">残差σ</th><th class="num">年化斜率</th><th class="num">Z</th><th>状态</th>'
-        f'</tr></thead><tbody>{"".join(rows)}</tbody></table>'
-    )
-
-
-def recent_table(model):
-    rows = []
-    for date, row in model.tail(10).iterrows():
-        zscore = float(row["zscore"])
-        zclass = "positive" if zscore > 0 else "negative" if zscore < 0 else ""
-        rows.append(
-            f'<tr><td>{date.strftime("%Y-%m-%d")}</td><td class="num">{row["ratio"]:.4f}</td>'
-            f'<td class="num">{row["center"]:.4f}</td><td class="num {zclass}">{zscore:+.2f}σ</td></tr>'
-        )
-    return (
-        '<table class="dark-table"><thead><tr><th>日期</th><th class="num">比值</th>'
-        f'<th class="num">中枢</th><th class="num">残差Z</th></tr></thead><tbody>{"".join(rows)}</tbody></table>'
-    )
-
-
 def render_detail(pair_key, pair):
     config = PAIR_CONFIG[pair_key]
     base = pair["base"]
@@ -419,64 +385,59 @@ def render_detail(pair_key, pair):
         st.rerun()
 
     st.markdown(
-        f'<div class="detail-head"><h1>{config["name"]} 趋势偏离分析</h1>'
-        f'<p>{config["subtitle"]} · 滚动OLS趋势中枢 · 窗口内回归残差标准差</p></div>',
+        f'<div class="detail-head"><h1>{config["name"]} 固定窗口分析</h1>'
+        f'<p>{config["subtitle"]} · 3 / 5 / 7年固定OLS趋势 · 固定残差标准差通道</p></div>',
         unsafe_allow_html=True,
     )
-    selected_years = st.radio(
-        "观察窗口", WINDOW_YEARS, index=1, horizontal=True,
-        format_func=lambda value: f"{value}年", key=f"window_{pair_key}",
-    )
-    model = models[selected_years]
-    latest = model.iloc[-1]
-    zone, _ = signal_class(latest["zscore"])
+    latest_ratio = float(base.iloc[-1]["ratio"])
     metric_values = (
-        ("当前比值", f'{latest["ratio"]:.4f}'),
-        ("趋势中枢", f'{latest["center"]:.4f}'),
-        ("残差标准差", f'{latest["residual_sigma"]:.4f}'),
-        ("残差Z", f'{latest["zscore"]:+.2f}σ'),
-        ("年化斜率", f'{latest["slope_year"]:+.4f}'),
-        ("多周期确认", f'{snapshot.confirmation_count}/3 · {zone}'),
+        ("当前比值", f"{latest_ratio:.4f}"),
+        ("3年当前Z", f'{models[3].iloc[-1]["zscore"]:+.2f}σ'),
+        ("5年当前Z", f'{models[5].iloc[-1]["zscore"]:+.2f}σ'),
+        ("7年当前Z", f'{models[7].iloc[-1]["zscore"]:+.2f}σ'),
+        ("多周期确认", f"{snapshot.confirmation_count}/3"),
+        ("当前状态", snapshot.label),
     )
     cards = "".join(
         f'<div class="metric-item"><div class="metric-label">{label}</div><div class="metric-value">{value}</div></div>'
         for label, value in metric_values
     )
     st.markdown(f'<div class="metric-grid">{cards}</div>', unsafe_allow_html=True)
-    model_start = model.index[0]
-    source_start = base.index[0]
     st.markdown(
-        f'<div class="warmup-note">完整比值从 {source_start:%Y-%m-%d} 开始显示；'
-        f'{selected_years}年模型需先积累 {selected_years * 252:,} 个交易日，'
-        f'因此中枢、通道和残差Z从 {model_start:%Y-%m-%d} 才开始出现。</div>',
+        '<div class="fixed-intro">以下三张图分别使用截至今天最近3年、5年和7年的固定样本。'
+        '每张图只拟合一次，因此趋势线是直线、残差标准差在该图内保持不变；三个周期之间互不混用。</div>',
         unsafe_allow_html=True,
     )
-    st.plotly_chart(
-        make_detail_chart(base, model, f"{selected_years}年滚动OLS：比值、趋势中枢与残差通道"),
-        width="stretch",
-        config={"displayModeBar": True, "displaylogo": False},
-    )
 
-    left, right = st.columns([1.05, .95], gap="large")
-    with left:
-        st.markdown("##### 多周期当前状态")
-        st.markdown(multi_window_table(models, selected_years), unsafe_allow_html=True)
-    with right:
-        st.markdown("##### 最近10个交易日")
-        st.markdown(recent_table(model), unsafe_allow_html=True)
+    for position, years in enumerate(WINDOW_YEARS):
+        model = models[years]
+        latest = model.iloc[-1]
+        st.markdown(
+            f'<div class="fixed-section"><div class="fixed-title">{years}年固定窗口</div>'
+            f'<div class="fixed-meta">样本 {model.index[0]:%Y-%m-%d} 至 {model.index[-1]:%Y-%m-%d}'
+            f'｜趋势中枢 {latest["center"]:.5f}｜年化斜率 {latest["slope_year"]:+.5f}'
+            f'｜残差σ {latest["residual_sigma"]:.5f}｜当前Z {latest["zscore"]:+.2f}</div></div>',
+            unsafe_allow_html=True,
+        )
+        st.plotly_chart(
+            make_detail_chart(model, "比值、OLS趋势线与固定残差标准差通道"),
+            width="stretch",
+            config={"displayModeBar": True, "displaylogo": False},
+        )
+        if position < len(WINDOW_YEARS) - 1:
+            st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
     with st.expander("计算口径与使用说明"):
         st.markdown(
-            f"""
+            """
             <div class="method-note">
-            <p><strong>{selected_years}年滚动窗口：</strong>每天只使用当天以前的
-            <code>{selected_years * 252}</code>个交易日拟合比值趋势线，当前日期不会参与自己的中枢计算。</p>
-            <p><strong>为什么前几年没有中枢：</strong>这段是模型的“准备期”。原始比值仍完整显示，
-            但在凑够{selected_years}年样本以前，不生成中枢和Z值，避免拿几个月数据冒充{selected_years}年规律。</p>
-            <p><strong>趋势中枢：</strong>最小二乘趋势线向前预测到当天得到的合理比值。</p>
+            <p><strong>固定窗口：</strong>3年、5年、7年分别截取最近756、1260、1764个交易日，
+            每个区间独立做一次最小二乘拟合，不按日滚动重算。</p>
+            <p><strong>趋势中枢：</strong>当前比值在该固定趋势线上的对应位置。</p>
             <p><strong>残差标准差：</strong><code>sqrt(SSE / (N - 2))</code>，减去2是因为趋势线估计了截距和斜率。</p>
-            <p><strong>确认规则：</strong>至少两个窗口在同一方向超过±2σ才算多周期确认；±2.5σ以上标为强偏离。
-            旧版全局均值、固定标准差和基于旧Z值的收益阈值已移除，避免不同口径混用。</p>
+            <p><strong>确认规则：</strong>至少两个窗口在同一方向超过±2σ才算多周期确认；±2.5σ以上标为强偏离。</p>
+            <p><strong>重要限制：</strong>图中旧日期的Z使用了整个固定区间拟合出的趋势线，因此只能帮助理解当前样本结构，
+            不能当作旧日期当时已经知道的交易信号。若以后做严格历史回测，仍需另用逐日滚动、且不偷看未来数据的版本。</p>
             </div>
             """,
             unsafe_allow_html=True,
@@ -507,7 +468,7 @@ if "page" not in st.session_state:
     st.session_state.page = "home"
 if "_pairs" not in st.session_state:
     try:
-        with st.spinner("加载完整历史并计算滚动OLS..."):
+        with st.spinner("加载行情并计算3 / 5 / 7年固定窗口..."):
             df, pairs, is_realtime = load_all_models()
             st.session_state._df = df
             st.session_state._pairs = pairs
@@ -528,10 +489,10 @@ if st.session_state.page == "home":
         <div class="topbar">
             <div>
                 <h1>指数比值趋势偏离看板</h1>
-                <p>用滚动OLS识别动态中枢，用回归残差衡量偏离，不再假设长期均值固定不变</p>
+                <p>用3 / 5 / 7年固定OLS窗口对照当前比值位置，一次查看不同周期结论</p>
             </div>
             <div class="topbar-meta">
-                <span class="model-badge">3 / 5 / 7年多周期模型</span><br>
+                <span class="model-badge">3 / 5 / 7年固定窗口</span><br>
                 {live} · 数据截至 {df.index[-1].strftime('%Y-%m-%d')} · {len(df):,}个共同交易日
             </div>
         </div>
@@ -552,7 +513,7 @@ if st.session_state.page == "home":
         with column:
             with st.container(border=True):
                 render_pair_card(pair_key, pair)
-                if st.button("查看滚动历史 →", key=f"detail_{pair_key}"):
+                if st.button("查看全部固定窗口 →", key=f"detail_{pair_key}"):
                     st.session_state.page = pair_key
                     st.rerun()
     st.markdown(

@@ -42,13 +42,11 @@ class DashboardSmokeTest(unittest.TestCase):
             self.assertEqual(len(app.button), 4)
             app.button[1].click().run(timeout=30)
             self.assertEqual(len(app.exception), 0)
-            self.assertIn("IC / IF 趋势偏离分析", app.markdown[1].value)
-            self.assertEqual(app.radio[0].value, 5)
-            self.assertTrue(any("完整比值从" in item.value for item in app.markdown))
-            for years in (3, 7):
-                app.radio[0].set_value(years).run(timeout=30)
-                self.assertEqual(len(app.exception), 0)
-                self.assertEqual(app.radio[0].value, years)
+            self.assertIn("IC / IF 固定窗口分析", app.markdown[1].value)
+            self.assertEqual(len(app.radio), 0)
+            detail_text = " ".join(item.value for item in app.markdown)
+            for label in ("3年固定窗口", "5年固定窗口", "7年固定窗口"):
+                self.assertIn(label, detail_text)
         finally:
             ak.stock_zh_index_daily = original_daily
             ak.stock_zh_index_spot_sina = original_spot
