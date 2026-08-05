@@ -44,6 +44,11 @@ class DashboardSmokeTest(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertIn("IC / IF 趋势偏离分析", app.markdown[1].value)
             self.assertEqual(app.radio[0].value, 5)
+            self.assertTrue(any("完整比值从" in item.value for item in app.markdown))
+            for years in (3, 7):
+                app.radio[0].set_value(years).run(timeout=30)
+                self.assertEqual(len(app.exception), 0)
+                self.assertEqual(app.radio[0].value, years)
         finally:
             ak.stock_zh_index_daily = original_daily
             ak.stock_zh_index_spot_sina = original_spot

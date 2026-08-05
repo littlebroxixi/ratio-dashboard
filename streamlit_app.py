@@ -55,101 +55,111 @@ st.markdown(
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
-.stApp { background: #080b12; }
+.stApp { background: #fbfbf8; color: #303431; }
 #MainMenu, footer, header { visibility: hidden; }
-.block-container { padding: 1.35rem 2rem 1rem; max-width: 1680px; }
+.block-container { padding: 1.65rem 2.5rem 1.2rem; max-width: 1600px; }
 
 .topbar {
     display: flex; justify-content: space-between; align-items: flex-start;
     gap: 24px; padding: 12px 0 22px; margin-bottom: 20px;
-    border-bottom: 1px solid rgba(255,255,255,.06);
+    border-bottom: 1px solid #e8e7e1;
 }
-.topbar h1 { margin: 0; color: #f8fafc; font-size: 1.65rem; font-weight: 700; }
-.topbar p { margin: 6px 0 0; color: #64748b; font-size: .82rem; }
-.topbar-meta { color: #64748b; font-size: .76rem; text-align: right; line-height: 1.8; }
+.topbar h1 { margin: 0; color: #2f3431; font-size: 1.65rem; font-weight: 650; letter-spacing: -.02em; }
+.topbar p { margin: 7px 0 0; color: #8b8e89; font-size: .82rem; }
+.topbar-meta { color: #929590; font-size: .76rem; text-align: right; line-height: 1.8; }
 .model-badge {
     display: inline-flex; align-items: center; padding: 5px 10px; border-radius: 999px;
-    color: #c4b5fd; background: rgba(139,92,246,.10); border: 1px solid rgba(139,92,246,.20);
+    color: #6aa27b; background: #f0f7f1; border: 1px solid #dcecdf;
     font-size: .7rem; font-weight: 600; letter-spacing: .02em;
 }
 .live-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 5px; }
-.live-dot.on { background: #34d399; box-shadow: 0 0 8px rgba(52,211,153,.7); }
-.live-dot.off { background: #64748b; }
+.live-dot.on { background: #5bc77a; box-shadow: 0 0 7px rgba(91,199,122,.45); }
+.live-dot.off { background: #b2b4af; }
 
 [data-testid="stVerticalBlockBorderWrapper"] {
-    background: linear-gradient(145deg, rgba(17,24,39,.90), rgba(12,17,29,.96));
-    border-color: rgba(255,255,255,.07) !important;
-    border-radius: 18px !important;
+    background: rgba(255,255,255,.78);
+    border-color: #e8e7e1 !important;
+    border-radius: 16px !important;
+    box-shadow: 0 8px 28px rgba(71,76,70,.045);
 }
 .pair-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.pair-name { color: #f1f5f9; font-size: 1.15rem; font-weight: 700; }
-.pair-sub { color: #64748b; font-size: .72rem; margin-top: 2px; }
+.pair-name { color: #303431; font-size: 1.15rem; font-weight: 650; }
+.pair-sub { color: #9a9c97; font-size: .72rem; margin-top: 2px; }
 .status-pill {
     padding: 5px 10px; border-radius: 999px; font-size: .69rem; font-weight: 600;
-    color: #cbd5e1; background: rgba(148,163,184,.09); border: 1px solid rgba(148,163,184,.12);
+    color: #858984; background: #f5f5f1; border: 1px solid #e8e7e1;
 }
-.status-pill.negative { color: #86efac; background: rgba(34,197,94,.09); border-color: rgba(34,197,94,.18); }
-.status-pill.positive { color: #fca5a5; background: rgba(239,68,68,.09); border-color: rgba(239,68,68,.18); }
+.status-pill.negative { color: #3f9d66; background: #eff8f1; border-color: #d9ecde; }
+.status-pill.positive { color: #c87255; background: #fcf2ed; border-color: #f0ddd4; }
 .ratio-line { margin-top: 11px; display: flex; align-items: baseline; gap: 10px; }
-.ratio-value { color: #f8fafc; font-size: 2.15rem; font-weight: 700; letter-spacing: -.03em; }
+.ratio-value { color: #343835; font-size: 2.15rem; font-weight: 650; letter-spacing: -.03em; }
 .ratio-change { font-size: .82rem; font-weight: 600; }
-.ratio-change.up { color: #f87171; }
-.ratio-change.down { color: #4ade80; }
-.ratio-change.flat { color: #94a3b8; }
+.ratio-change.up { color: #d68462; }
+.ratio-change.down { color: #55b978; }
+.ratio-change.flat { color: #999c97; }
 
 .window-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 4px 0 2px; }
 .window-cell {
-    padding: 10px 9px; border-radius: 11px; background: rgba(255,255,255,.025);
-    border: 1px solid rgba(255,255,255,.04); text-align: center;
+    padding: 10px 9px; border-radius: 11px; background: #fafaf7;
+    border: 1px solid #ecebe5; text-align: center;
 }
-.window-label { color: #64748b; font-size: .66rem; }
-.window-z { color: #e2e8f0; font-size: 1.05rem; font-weight: 700; margin: 3px 0; }
-.window-meta { color: #475569; font-size: .62rem; }
-.window-cell.confirmed { border-color: rgba(249,115,22,.25); background: rgba(249,115,22,.05); }
-.window-cell.strong { border-color: rgba(239,68,68,.30); background: rgba(239,68,68,.06); }
-.window-cell.negative .window-z { color: #4ade80; }
-.window-cell.positive .window-z { color: #f87171; }
+.window-label { color: #999c97; font-size: .66rem; }
+.window-z { color: #454945; font-size: 1.05rem; font-weight: 650; margin: 3px 0; }
+.window-meta { color: #aaaca6; font-size: .62rem; }
+.window-cell.confirmed { border-color: #ebd8cd; background: #fdf7f2; }
+.window-cell.strong { border-color: #e8cabc; background: #fcf1ea; }
+.window-cell.negative .window-z { color: #4bad70; }
+.window-cell.positive .window-z { color: #d37d5e; }
 
 .decision-box {
     margin-top: 10px; padding: 11px 13px; border-radius: 11px;
-    color: #94a3b8; background: rgba(148,163,184,.04); border: 1px solid rgba(148,163,184,.08);
+    color: #858984; background: #fafaf7; border: 1px solid #ecebe5;
     font-size: .74rem; line-height: 1.55;
 }
-.decision-box.negative { color: #bbf7d0; background: rgba(34,197,94,.055); border-color: rgba(34,197,94,.14); }
-.decision-box.positive { color: #fecaca; background: rgba(239,68,68,.055); border-color: rgba(239,68,68,.14); }
+.decision-box.negative { color: #468f62; background: #f1f8f2; border-color: #dcecdf; }
+.decision-box.positive { color: #bd7358; background: #fcf3ee; border-color: #efddd5; }
 
 .stButton > button {
-    width: 100%; color: #93c5fd; background: rgba(59,130,246,.06);
-    border: 1px solid rgba(96,165,250,.17); border-radius: 10px; font-weight: 600;
+    width: 100%; color: #5f8e6f; background: #f5faf6;
+    border: 1px solid #dfeae1; border-radius: 10px; font-weight: 600;
 }
-.stButton > button:hover { border-color: rgba(96,165,250,.38); color: #bfdbfe; }
+.stButton > button:hover { border-color: #bcd6c2; color: #3f7652; }
 
 .detail-head { margin: 4px 0 12px; }
-.detail-head h1 { margin: 0; color: #f8fafc; font-size: 1.55rem; }
-.detail-head p { margin: 5px 0 0; color: #64748b; font-size: .8rem; }
+.detail-head h1 { margin: 0; color: #303431; font-size: 1.55rem; font-weight: 650; }
+.detail-head p { margin: 5px 0 0; color: #969993; font-size: .8rem; }
 .metric-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin: 14px 0 18px; }
 .metric-item {
     padding: 13px 12px; border-radius: 12px; text-align: center;
-    background: rgba(15,23,42,.64); border: 1px solid rgba(255,255,255,.05);
+    background: rgba(255,255,255,.78); border: 1px solid #e8e7e1;
+    box-shadow: 0 5px 18px rgba(71,76,70,.035);
 }
-.metric-label { color: #64748b; font-size: .66rem; }
-.metric-value { color: #e2e8f0; font-size: 1.12rem; font-weight: 700; margin-top: 5px; }
+.metric-label { color: #9a9d97; font-size: .66rem; }
+.metric-value { color: #414541; font-size: 1.12rem; font-weight: 650; margin-top: 5px; }
 
 .dark-table {
     width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden;
-    border-radius: 12px; background: rgba(15,23,42,.50); border: 1px solid rgba(255,255,255,.05);
+    border-radius: 12px; background: rgba(255,255,255,.72); border: 1px solid #e8e7e1;
     font-size: .76rem;
 }
-.dark-table th { padding: 10px 12px; color: #64748b; background: rgba(255,255,255,.025); text-align: left; }
-.dark-table td { padding: 9px 12px; color: #cbd5e1; border-top: 1px solid rgba(255,255,255,.035); }
+.dark-table th { padding: 10px 12px; color: #8e918c; background: #f6f6f2; text-align: left; }
+.dark-table td { padding: 9px 12px; color: #555a55; border-top: 1px solid #eeede8; }
 .dark-table .num { text-align: right; font-variant-numeric: tabular-nums; }
-.dark-table .negative { color: #4ade80; font-weight: 600; }
-.dark-table .positive { color: #f87171; font-weight: 600; }
-.dark-table .selected td { background: rgba(96,165,250,.055); }
+.dark-table .negative { color: #4bad70; font-weight: 600; }
+.dark-table .positive { color: #d37d5e; font-weight: 600; }
+.dark-table .selected td { background: #f0f7f2; }
 
-.method-note { color: #94a3b8; font-size: .78rem; line-height: 1.75; }
-.method-note code { color: #c4b5fd; }
-.footer { color: #334155; text-align: center; font-size: .68rem; padding: 24px 0 10px; }
+.warmup-note {
+    margin: -5px 0 14px; padding: 10px 13px; color: #858984; background: #f6f6f1;
+    border-left: 3px solid #d8b98b; border-radius: 4px 10px 10px 4px; font-size: .75rem;
+}
+.method-note { color: #737772; font-size: .78rem; line-height: 1.75; }
+.method-note code { color: #4f9667; background: #edf6ef; }
+.footer { color: #b0b2ad; text-align: center; font-size: .68rem; padding: 24px 0 10px; }
+
+[data-testid="stRadio"] label, [data-testid="stExpander"] details, h5 { color: #4c514d !important; }
+[data-testid="stRadio"] [role="radiogroup"] { gap: 1.2rem; }
+[data-testid="stExpander"] details { background: rgba(255,255,255,.55); border-color: #e7e6e0; }
 
 @media (max-width: 900px) {
     .metric-grid { grid-template-columns: repeat(3, 1fr); }
@@ -221,45 +231,43 @@ def direction_text(pair_key, direction):
 
 def make_sparkline(model):
     recent = model.tail(252)
-    latest_z = float(recent.iloc[-1]["zscore"])
-    color = "#f87171" if latest_z > 1 else "#4ade80" if latest_z < -1 else "#60a5fa"
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=recent.index, y=recent["upper_2"], mode="lines",
-        line=dict(color="rgba(249,115,22,.24)", width=.6), showlegend=False, hoverinfo="skip",
+        line=dict(color="rgba(116,190,143,.18)", width=.6), showlegend=False, hoverinfo="skip",
     ))
     fig.add_trace(go.Scatter(
         x=recent.index, y=recent["lower_2"], mode="lines",
-        line=dict(color="rgba(249,115,22,.24)", width=.6),
-        fill="tonexty", fillcolor="rgba(249,115,22,.035)", showlegend=False, hoverinfo="skip",
+        line=dict(color="rgba(116,190,143,.18)", width=.6),
+        fill="tonexty", fillcolor="rgba(145,203,168,.09)", showlegend=False, hoverinfo="skip",
     ))
     fig.add_trace(go.Scatter(
         x=recent.index, y=recent["center"], mode="lines",
-        line=dict(color="#a78bfa", width=1.1, dash="dot"), showlegend=False, hoverinfo="skip",
+        line=dict(color="#58bf77", width=1.25, dash="dash"), showlegend=False, hoverinfo="skip",
     ))
     fig.add_trace(go.Scatter(
         x=recent.index, y=recent["ratio"], mode="lines",
-        line=dict(color=color, width=2), showlegend=False,
+        line=dict(color="#d78963", width=2), showlegend=False,
         hovertemplate="%{x|%Y-%m-%d}<br>比值 %{y:.4f}<extra></extra>",
     ))
     fig.update_layout(
         height=122, margin=dict(l=0, r=4, t=0, b=0),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         xaxis=dict(visible=False), yaxis=dict(visible=False), hovermode="x unified",
-        hoverlabel=dict(bgcolor="#0f172a", bordercolor="rgba(255,255,255,.08)"),
+        hoverlabel=dict(bgcolor="#ffffff", bordercolor="#e6e4de", font=dict(color="#444844")),
     )
     return fig
 
 
-def make_detail_chart(model, title):
+def make_detail_chart(base, model, title):
     fig = make_subplots(
         rows=2, cols=1, shared_xaxes=True,
-        row_heights=[0.72, 0.28], vertical_spacing=0.045,
+        row_heights=[0.69, 0.31], vertical_spacing=0.075,
     )
     band_styles = {
-        3: ("rgba(239,68,68,.022)", "rgba(239,68,68,.20)"),
-        2: ("rgba(249,115,22,.035)", "rgba(249,115,22,.25)"),
-        1: ("rgba(34,197,94,.055)", "rgba(34,197,94,.26)"),
+        3: ("rgba(237,218,164,.13)", "rgba(221,197,129,.10)"),
+        2: ("rgba(157,207,179,.13)", "rgba(117,184,147,.10)"),
+        1: ("rgba(165,166,214,.18)", "rgba(133,136,194,.10)"),
     }
     for level in (3, 2, 1):
         fill, line = band_styles[level]
@@ -274,39 +282,43 @@ def make_detail_chart(model, title):
         ), row=1, col=1)
     fig.add_trace(go.Scatter(
         x=model.index, y=model["center"], name="滚动OLS中枢",
-        line=dict(color="#a78bfa", width=1.4, dash="dash"),
+        line=dict(color="#58c878", width=2.0, dash="dash"),
         hovertemplate="趋势中枢 %{y:.4f}<extra></extra>",
     ), row=1, col=1)
     fig.add_trace(go.Scatter(
-        x=model.index, y=model["ratio"], name="实际比值",
-        line=dict(color="#60a5fa", width=1.8),
+        x=base.index, y=base["ratio"], name="实际比值",
+        line=dict(color="#d78963", width=1.8),
         hovertemplate="比值 %{y:.4f}<extra></extra>",
     ), row=1, col=1)
 
-    colors = [
-        "#ef4444" if abs(z) >= 3 else "#f97316" if abs(z) >= 2
-        else "#22c55e" if abs(z) >= 1 else "#334155"
-        for z in model["zscore"]
-    ]
+    colors = ["#b5a3f4" if z >= 0 else "#7ecce2" for z in model["zscore"]]
     fig.add_trace(go.Bar(
         x=model.index, y=model["zscore"], name="残差Z",
-        marker_color=colors, opacity=.82,
+        marker_color=colors, opacity=.78,
         hovertemplate="残差Z %{y:+.2f}σ<extra></extra>",
     ), row=2, col=1)
-    for value, color in ((2, "#f97316"), (-2, "#f97316"), (3, "#ef4444"), (-3, "#ef4444")):
-        fig.add_hline(y=value, line_dash="dot", line_color=color, line_width=.65, row=2, col=1)
-    fig.add_hline(y=0, line_color="#334155", line_width=.6, row=2, col=1)
+    for value, color in (
+        (2, "#63c4df"), (-2, "#63c4df"),
+        (3, "#edca61"), (-3, "#edca61"),
+        (4, "#63c4df"), (-4, "#63c4df"),
+    ):
+        fig.add_hline(y=value, line_dash="dash", line_color=color, line_width=1.05, row=2, col=1)
+    fig.add_hline(y=0, line_color="#cfd3ce", line_width=.7, row=2, col=1)
     fig.update_layout(
-        title=dict(text=title, font=dict(color="#94a3b8", size=14), x=0),
-        height=620, template="plotly_dark",
-        paper_bgcolor="#0f1320", plot_bgcolor="#0f1320",
-        legend=dict(orientation="h", y=1.06, font=dict(color="#64748b", size=11)),
-        margin=dict(t=52, b=32, l=48, r=16), bargap=.25, hovermode="x unified",
+        title=dict(text=title, font=dict(color="#3d423e", size=16), x=.03, y=.98),
+        height=660, template="plotly_white",
+        paper_bgcolor="#fbfbf8", plot_bgcolor="#fbfbf8",
+        legend=dict(
+            orientation="h", y=1.055, x=.03,
+            font=dict(color="#888c87", size=11), bgcolor="rgba(0,0,0,0)",
+        ),
+        margin=dict(t=62, b=30, l=62, r=28), bargap=.22, hovermode="x unified",
+        hoverlabel=dict(bgcolor="#ffffff", bordercolor="#e6e4de", font=dict(color="#444844")),
     )
-    fig.update_xaxes(gridcolor="rgba(255,255,255,.025)", zeroline=False)
-    fig.update_yaxes(gridcolor="rgba(255,255,255,.025)", zeroline=False)
-    fig.update_yaxes(title_text="比值", row=1, col=1)
-    fig.update_yaxes(title_text="残差Z", row=2, col=1)
+    fig.update_xaxes(gridcolor="#ecece7", gridwidth=.7, zeroline=False, tickfont=dict(color="#929691"))
+    fig.update_yaxes(gridcolor="#e7e8e3", gridwidth=.7, zeroline=False, tickfont=dict(color="#929691"))
+    fig.update_yaxes(title_text="比值", title_font=dict(color="#737873"), row=1, col=1)
+    fig.update_yaxes(title_text="残差Z", title_font=dict(color="#737873"), row=2, col=1)
     return fig
 
 
@@ -399,6 +411,7 @@ def recent_table(model):
 
 def render_detail(pair_key, pair):
     config = PAIR_CONFIG[pair_key]
+    base = pair["base"]
     models = pair["models"]
     snapshot = consensus_snapshot(models)
     if st.button("← 返回首页", key=f"back_{pair_key}"):
@@ -430,8 +443,16 @@ def render_detail(pair_key, pair):
         for label, value in metric_values
     )
     st.markdown(f'<div class="metric-grid">{cards}</div>', unsafe_allow_html=True)
+    model_start = model.index[0]
+    source_start = base.index[0]
+    st.markdown(
+        f'<div class="warmup-note">完整比值从 {source_start:%Y-%m-%d} 开始显示；'
+        f'{selected_years}年模型需先积累 {selected_years * 252:,} 个交易日，'
+        f'因此中枢、通道和残差Z从 {model_start:%Y-%m-%d} 才开始出现。</div>',
+        unsafe_allow_html=True,
+    )
     st.plotly_chart(
-        make_detail_chart(model, f"{selected_years}年滚动OLS：比值、趋势中枢与残差通道"),
+        make_detail_chart(base, model, f"{selected_years}年滚动OLS：比值、趋势中枢与残差通道"),
         width="stretch",
         config={"displayModeBar": True, "displaylogo": False},
     )
@@ -450,6 +471,8 @@ def render_detail(pair_key, pair):
             <div class="method-note">
             <p><strong>{selected_years}年滚动窗口：</strong>每天只使用当天以前的
             <code>{selected_years * 252}</code>个交易日拟合比值趋势线，当前日期不会参与自己的中枢计算。</p>
+            <p><strong>为什么前几年没有中枢：</strong>这段是模型的“准备期”。原始比值仍完整显示，
+            但在凑够{selected_years}年样本以前，不生成中枢和Z值，避免拿几个月数据冒充{selected_years}年规律。</p>
             <p><strong>趋势中枢：</strong>最小二乘趋势线向前预测到当天得到的合理比值。</p>
             <p><strong>残差标准差：</strong><code>sqrt(SSE / (N - 2))</code>，减去2是因为趋势线估计了截距和斜率。</p>
             <p><strong>确认规则：</strong>至少两个窗口在同一方向超过±2σ才算多周期确认；±2.5σ以上标为强偏离。
