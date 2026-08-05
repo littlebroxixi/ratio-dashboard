@@ -47,6 +47,9 @@ class DashboardSmokeTest(unittest.TestCase):
             detail_text = " ".join(item.value for item in app.markdown)
             for label in ("3年固定窗口", "5年固定窗口", "7年固定窗口"):
                 self.assertIn(label, detail_text)
+            self.assertIn("OLS趋势＋残差标准差", detail_text)
+            self.assertIn("平均值＋普通标准差", detail_text)
+            self.assertEqual(len(app.get("plotly_chart")), 6)
         finally:
             ak.stock_zh_index_daily = original_daily
             ak.stock_zh_index_spot_sina = original_spot

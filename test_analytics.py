@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from analytics import consensus_snapshot, fixed_ols_signal
+from analytics import build_pair_models, consensus_snapshot, fixed_mean_signal, fixed_ols_signal
 
 
 def sample_base(length=2100):
@@ -55,6 +55,30 @@ class FixedOlsTests(unittest.TestCase):
         self.assertEqual(result.confirmation_count, 2)
         self.assertEqual(result.strong_count, 1)
         self.assertEqual(result.label, "双周期确认")
+
+    def test_fixed_mean_matches_direct_sample_statistics(self):
+        base = sample_base()
+        model = fixed_mean_signal(base, 3)
+        history = base["ratio"].iloc[-3 * 252 :]
+        latest = model.iloc[-1]
+
+        self.assertAlmostEqual(latest["center"], history.mean(), places=12)
+        self.assertAlmostEqual(latest["residual_sigma"], history.std(ddof=1), places=12)
+        self.assertAlmostEqual(
+            latest["zscore"],
+            (history.iloc[-1] - history.mean()) / history.std(ddof=1),
+            places=12,
+        )
+        self.assertAlmostEqual(model["center"].std(), 0.0, places=12)
+        self.assertAlmostEqual(model["residual_sigma"].std(), 0.0, places=12)
+
+    def test_pair_models_include_matching_mean_windows(self):
+        df = sample_base().rename(columns={"price_a": "a", "price_b": "b"})[["a", "b"]]
+        result = build_pair_models(df, "a", "b")
+
+        self.assertEqual(set(result["models"]), {3, 5, 7})
+        self.assertEqual(set(result["mean_models"]), {3, 5, 7})
+        self.assertTrue(result["models"][5].index.equals(result["mean_models"][5].index))
 
 
 if __name__ == "__main__":

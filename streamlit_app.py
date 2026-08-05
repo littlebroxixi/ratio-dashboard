@@ -126,7 +126,7 @@ st.markdown(
 .detail-head { margin: 4px 0 12px; }
 .detail-head h1 { margin: 0; color: #303431; font-size: 1.55rem; font-weight: 650; }
 .detail-head p { margin: 5px 0 0; color: #969993; font-size: .8rem; }
-.metric-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin: 14px 0 18px; }
+.metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0 18px; }
 .metric-item {
     padding: 13px 12px; border-radius: 12px; text-align: center;
     background: rgba(255,255,255,.78); border: 1px solid #e8e7e1;
@@ -154,6 +154,8 @@ st.markdown(
 .fixed-section { margin: 8px 0 12px; }
 .fixed-title { color: #303431; font-size: 1.32rem; font-weight: 650; margin: 0 0 4px; }
 .fixed-meta { color: #969993; font-size: .82rem; line-height: 1.65; }
+.compare-title { color: #4a4f4b; font-size: .88rem; font-weight: 650; margin: 4px 0 2px; }
+.compare-meta { color: #969993; font-size: .7rem; line-height: 1.55; min-height: 2.2rem; }
 .section-divider { height: 1px; background: #e5e5df; margin: 30px 0 26px; }
 .method-note { color: #737772; font-size: .78rem; line-height: 1.75; }
 .method-note code { color: #4f9667; background: #edf6ef; }
@@ -163,7 +165,7 @@ st.markdown(
 [data-testid="stExpander"] details { background: rgba(255,255,255,.55); border-color: #e7e6e0; }
 
 @media (max-width: 900px) {
-    .metric-grid { grid-template-columns: repeat(3, 1fr); }
+    .metric-grid { grid-template-columns: repeat(2, 1fr); }
     .topbar { flex-direction: column; }
     .topbar-meta { text-align: left; }
 }
@@ -260,7 +262,14 @@ def make_sparkline(model):
     return fig
 
 
-def make_detail_chart(model, title):
+def make_detail_chart(
+    model,
+    title,
+    center_name="OLS趋势线",
+    center_color="#58c878",
+    sigma_name="残差σ",
+    y_range=None,
+):
     fig = go.Figure()
     band_styles = {
         3: ("rgba(237,218,164,.13)", "rgba(221,197,129,.10)"),
@@ -276,12 +285,12 @@ def make_detail_chart(model, title):
         fig.add_trace(go.Scatter(
             x=model.index, y=model[f"lower_{level}"], mode="lines",
             line=dict(color=line, width=.55), fill="tonexty", fillcolor=fill,
-            name=f"±{level}残差σ", showlegend=False, hoverinfo="skip",
+            name=f"±{level}{sigma_name}", showlegend=False, hoverinfo="skip",
         ))
     fig.add_trace(go.Scatter(
-        x=model.index, y=model["center"], name="OLS趋势线",
-        line=dict(color="#58c878", width=2.0, dash="dash"),
-        hovertemplate="趋势中枢 %{y:.4f}<extra></extra>",
+        x=model.index, y=model["center"], name=center_name,
+        line=dict(color=center_color, width=2.0, dash="dash"),
+        hovertemplate=f"{center_name} %{{y:.4f}}<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
         x=model.index, y=model["ratio"], name="实际比值",
@@ -289,8 +298,8 @@ def make_detail_chart(model, title):
         hovertemplate="比值 %{y:.4f}<extra></extra>",
     ))
     fig.update_layout(
-        title=dict(text=title, font=dict(color="#3d423e", size=16), x=.03, y=.98),
-        height=470, template="plotly_white",
+        title=dict(text=title, font=dict(color="#3d423e", size=14), x=.03, y=.98),
+        height=390, template="plotly_white",
         paper_bgcolor="#fbfbf8", plot_bgcolor="#fbfbf8",
         legend=dict(
             orientation="h", y=1.055, x=.03,
@@ -302,7 +311,18 @@ def make_detail_chart(model, title):
     fig.update_xaxes(gridcolor="#ecece7", gridwidth=.7, zeroline=False, tickfont=dict(color="#929691"))
     fig.update_yaxes(gridcolor="#e7e8e3", gridwidth=.7, zeroline=False, tickfont=dict(color="#929691"))
     fig.update_yaxes(title_text="比值", title_font=dict(color="#737873"))
+    if y_range is not None:
+        fig.update_yaxes(range=y_range)
     return fig
+
+
+def comparison_y_range(*models):
+    """Return one padded y-axis range shared by side-by-side charts."""
+
+    lower = min(float(model[["ratio", "lower_3"]].min().min()) for model in models)
+    upper = max(float(model[["ratio", "upper_3"]].max().max()) for model in models)
+    padding = max((upper - lower) * 0.04, 0.005)
+    return [lower - padding, upper + padding]
 
 
 def render_window_grid(models):
@@ -359,6 +379,7 @@ def render_detail(pair_key, pair):
     config = PAIR_CONFIG[pair_key]
     base = pair["base"]
     models = pair["models"]
+    mean_models = pair["mean_models"]
     snapshot = consensus_snapshot(models)
     if st.button("← 返回首页", key=f"back_{pair_key}"):
         st.session_state.page = "home"
@@ -366,17 +387,19 @@ def render_detail(pair_key, pair):
 
     st.markdown(
         f'<div class="detail-head"><h1>{config["name"]} 固定窗口分析</h1>'
-        f'<p>{config["subtitle"]} · 3 / 5 / 7年固定OLS趋势 · 固定残差标准差通道</p></div>',
+        f'<p>{config["subtitle"]} · 左侧OLS趋势法 · 右侧平均值与普通标准差法</p></div>',
         unsafe_allow_html=True,
     )
     latest_ratio = float(base.iloc[-1]["ratio"])
     metric_values = (
         ("当前比值", f"{latest_ratio:.4f}"),
-        ("3年当前Z", f'{models[3].iloc[-1]["zscore"]:+.2f}σ'),
-        ("5年当前Z", f'{models[5].iloc[-1]["zscore"]:+.2f}σ'),
-        ("7年当前Z", f'{models[7].iloc[-1]["zscore"]:+.2f}σ'),
-        ("多周期确认", f"{snapshot.confirmation_count}/3"),
-        ("当前状态", snapshot.label),
+        ("3年 OLS Z", f'{models[3].iloc[-1]["zscore"]:+.2f}σ'),
+        ("3年 均值Z", f'{mean_models[3].iloc[-1]["zscore"]:+.2f}σ'),
+        ("5年 OLS Z", f'{models[5].iloc[-1]["zscore"]:+.2f}σ'),
+        ("5年 均值Z", f'{mean_models[5].iloc[-1]["zscore"]:+.2f}σ'),
+        ("7年 OLS Z", f'{models[7].iloc[-1]["zscore"]:+.2f}σ'),
+        ("7年 均值Z", f'{mean_models[7].iloc[-1]["zscore"]:+.2f}σ'),
+        ("OLS多周期状态", f"{snapshot.label} · {snapshot.confirmation_count}/3"),
     )
     cards = "".join(
         f'<div class="metric-item"><div class="metric-label">{label}</div><div class="metric-value">{value}</div></div>'
@@ -384,26 +407,65 @@ def render_detail(pair_key, pair):
     )
     st.markdown(f'<div class="metric-grid">{cards}</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="fixed-intro">以下三张图分别使用截至今天最近3年、5年和7年的固定样本。'
-        '每张图只拟合一次，因此趋势线是直线、残差标准差在该图内保持不变；三个周期之间互不混用。</div>',
+        '<div class="fixed-intro">每个时间窗口左右使用完全相同的样本和纵轴尺度。左侧用OLS直线作为中枢，'
+        '波动取OLS残差标准差；右侧用固定算术平均值作为中枢，波动取比值本身的普通样本标准差。</div>',
         unsafe_allow_html=True,
     )
 
     for position, years in enumerate(WINDOW_YEARS):
-        model = models[years]
-        latest = model.iloc[-1]
+        ols_model = models[years]
+        mean_model = mean_models[years]
+        ols_latest = ols_model.iloc[-1]
+        mean_latest = mean_model.iloc[-1]
         st.markdown(
             f'<div class="fixed-section"><div class="fixed-title">{years}年固定窗口</div>'
-            f'<div class="fixed-meta">样本 {model.index[0]:%Y-%m-%d} 至 {model.index[-1]:%Y-%m-%d}'
-            f'｜趋势中枢 {latest["center"]:.5f}｜年化斜率 {latest["slope_year"]:+.5f}'
-            f'｜残差σ {latest["residual_sigma"]:.5f}｜当前Z {latest["zscore"]:+.2f}</div></div>',
+            f'<div class="fixed-meta">共同样本 {ols_model.index[0]:%Y-%m-%d} 至 {ols_model.index[-1]:%Y-%m-%d}'
+            f'｜{len(ols_model):,}个交易日｜左右图使用相同纵轴</div></div>',
             unsafe_allow_html=True,
         )
-        st.plotly_chart(
-            make_detail_chart(model, "比值、OLS趋势线与固定残差标准差通道"),
-            width="stretch",
-            config={"displayModeBar": True, "displaylogo": False},
-        )
+        y_range = comparison_y_range(ols_model, mean_model)
+        left, right = st.columns(2, gap="medium")
+        with left:
+            st.markdown(
+                f'<div class="compare-title">OLS趋势＋残差标准差</div>'
+                f'<div class="compare-meta">趋势中枢 {ols_latest["center"]:.5f}'
+                f'｜年化斜率 {ols_latest["slope_year"]:+.5f}'
+                f'｜残差σ {ols_latest["residual_sigma"]:.5f}'
+                f'｜当前Z {ols_latest["zscore"]:+.2f}</div>',
+                unsafe_allow_html=True,
+            )
+            st.plotly_chart(
+                make_detail_chart(
+                    ols_model,
+                    "OLS趋势线与固定残差标准差通道",
+                    center_name="OLS趋势线",
+                    center_color="#58c878",
+                    sigma_name="残差σ",
+                    y_range=y_range,
+                ),
+                width="stretch",
+                config={"displayModeBar": True, "displaylogo": False},
+            )
+        with right:
+            st.markdown(
+                f'<div class="compare-title">平均值＋普通标准差</div>'
+                f'<div class="compare-meta">固定均值 {mean_latest["center"]:.5f}'
+                f'｜样本σ {mean_latest["residual_sigma"]:.5f}'
+                f'｜当前Z {mean_latest["zscore"]:+.2f}</div>',
+                unsafe_allow_html=True,
+            )
+            st.plotly_chart(
+                make_detail_chart(
+                    mean_model,
+                    "固定平均值与普通标准差通道",
+                    center_name="固定平均值",
+                    center_color="#7d83c7",
+                    sigma_name="样本σ",
+                    y_range=y_range,
+                ),
+                width="stretch",
+                config={"displayModeBar": True, "displaylogo": False},
+            )
         if position < len(WINDOW_YEARS) - 1:
             st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
@@ -415,6 +477,10 @@ def render_detail(pair_key, pair):
             每个区间独立做一次最小二乘拟合，不按日滚动重算。</p>
             <p><strong>趋势中枢：</strong>当前比值在该固定趋势线上的对应位置。</p>
             <p><strong>残差标准差：</strong><code>sqrt(SSE / (N - 2))</code>，减去2是因为趋势线估计了截距和斜率。</p>
+            <p><strong>平均值法：</strong>右侧中枢是固定窗口内全部比值的算术平均值；普通样本标准差为
+            <code>sqrt(sum((x - mean)^2) / (N - 1))</code>。均值和标准差在该固定窗口内都保持不变。</p>
+            <p><strong>左右对比：</strong>两张图使用同一批交易日和同一纵轴范围。OLS允许中枢随长期趋势倾斜，
+            平均值法假设中枢是一条水平线，因此可以直观看出“趋势调整”对当前Z值的影响。</p>
             <p><strong>确认规则：</strong>至少两个窗口在同一方向超过±2σ才算多周期确认；±2.5σ以上标为强偏离。</p>
             <p><strong>重要限制：</strong>图中旧日期的Z使用了整个固定区间拟合出的趋势线，因此只能帮助理解当前样本结构，
             不能当作旧日期当时已经知道的交易信号。若以后做严格历史回测，仍需另用逐日滚动、且不偷看未来数据的版本。</p>

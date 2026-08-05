@@ -1,4 +1,4 @@
-"""OLS analytics for index-ratio monitoring.
+"""Fixed-window analytics for index-ratio monitoring.
 
 Each 3/5/7-year view fits one trend to the latest fixed sample.  The regression
 residual scale is the standard OLS residual error:
@@ -6,6 +6,9 @@ residual scale is the standard OLS residual error:
     sigma = sqrt(SSE / (n - 2))
 
 where the two fitted parameters are the intercept and slope.
+
+For comparison, the same sample is also evaluated with a constant arithmetic
+mean and the ordinary sample standard deviation (ddof=1).
 """
 
 from __future__ import annotations
@@ -70,13 +73,46 @@ def fixed_ols_signal(base: pd.DataFrame, years: int) -> pd.DataFrame:
     return frame
 
 
+def fixed_mean_signal(base: pd.DataFrame, years: int) -> pd.DataFrame:
+    """Evaluate the latest fixed N-year sample around its arithmetic mean.
+
+    The center and standard deviation are fixed across the displayed sample.
+    The ordinary sample standard deviation uses ``N - 1`` in the denominator.
+    """
+
+    if years <= 0:
+        raise ValueError("years must be positive")
+    required = {"ratio", "price_a", "price_b"}
+    missing = required.difference(base.columns)
+    if missing:
+        raise ValueError(f"missing columns: {sorted(missing)}")
+
+    window = years * TRADING_DAYS
+    frame = base.sort_index().tail(window).copy()
+    if len(frame) < window:
+        raise ValueError(f"{years}y model needs at least {window} observations")
+
+    y = frame["ratio"].to_numpy(dtype=float)
+    center = float(np.mean(y))
+    sigma = float(np.std(y, ddof=1))
+    frame["center"] = center
+    frame["residual_sigma"] = sigma
+    frame["slope_year"] = 0.0
+    frame["residual"] = y - center
+    frame["zscore"] = frame["residual"] / sigma
+    for level in (1, 2, 3):
+        frame[f"upper_{level}"] = center + level * sigma
+        frame[f"lower_{level}"] = center - level * sigma
+    return frame
+
+
 def build_pair_models(
     df: pd.DataFrame,
     numerator: str,
     denominator: str,
     windows: tuple[int, ...] = WINDOW_YEARS,
 ) -> dict:
-    """Build the raw ratio and latest fixed-window OLS models for a pair."""
+    """Build raw ratio plus OLS and mean/std fixed-window models for a pair."""
 
     base = pd.DataFrame(index=df.index)
     base["ratio"] = df[numerator] / df[denominator]
@@ -84,7 +120,8 @@ def build_pair_models(
     base["price_b"] = df[denominator]
     base = base.replace([np.inf, -np.inf], np.nan).dropna().sort_index()
     models = {years: fixed_ols_signal(base, years) for years in windows}
-    return {"base": base, "models": models}
+    mean_models = {years: fixed_mean_signal(base, years) for years in windows}
+    return {"base": base, "models": models, "mean_models": mean_models}
 
 
 def consensus_snapshot(models: dict[int, pd.DataFrame]) -> Consensus:
