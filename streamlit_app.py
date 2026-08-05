@@ -151,7 +151,7 @@ st.markdown(
     margin: 2px 0 22px; padding: 11px 14px; color: #858984; background: #f6f6f1;
     border-left: 3px solid #d8b98b; border-radius: 4px 10px 10px 4px; font-size: .75rem;
 }
-.asof-note { color: #9a9d97; font-size: .74rem; padding-top: 1.85rem; }
+.asof-note { color: #9a9d97; font-size: .74rem; margin: 4px 0 14px; text-align: right; }
 .asof-note strong { color: #5f8e6f; font-weight: 600; }
 .fixed-section { margin: 8px 0 12px; }
 .fixed-title { color: #303431; font-size: 1.32rem; font-weight: 650; margin: 0 0 4px; }
@@ -401,7 +401,15 @@ def render_detail(pair_key, df):
     if stored_date is None or stored_date < earliest_date or stored_date > latest_date:
         st.session_state[date_key] = latest_date
 
-    date_col, reset_col, status_col = st.columns([1.45, .8, 4.75], vertical_alignment="bottom")
+    quick_dates = {
+        "1个月前": max((pd.Timestamp(latest_date) - pd.DateOffset(months=1)).date(), earliest_date),
+        "3个月前": max((pd.Timestamp(latest_date) - pd.DateOffset(months=3)).date(), earliest_date),
+        "6个月前": max((pd.Timestamp(latest_date) - pd.DateOffset(months=6)).date(), earliest_date),
+        "1年前": max((pd.Timestamp(latest_date) - pd.DateOffset(years=1)).date(), earliest_date),
+    }
+    date_col, reset_col, *quick_cols = st.columns(
+        [2.8, 1, 1, 1, 1, 1], vertical_alignment="bottom"
+    )
     with reset_col:
         st.button(
             "回到最新",
@@ -417,6 +425,14 @@ def render_detail(pair_key, df):
             key=date_key,
             format="YYYY-MM-DD",
         )
+    for column, (label, target_date) in zip(quick_cols, quick_dates.items()):
+        with column:
+            st.button(
+                label,
+                key=f"quick_{pair_key}_{label}",
+                on_click=reset_asof_date,
+                args=(date_key, target_date),
+            )
 
     asof_df, actual_date = slice_asof(df, requested_date)
     pair = build_pair_models(asof_df, config["numerator"], config["denominator"])
@@ -431,8 +447,7 @@ def render_detail(pair_key, df):
         if adjusted
         else f"所有计算仅使用 <strong>{actual_date:%Y-%m-%d}</strong> 及以前的数据"
     )
-    with status_col:
-        st.markdown(f'<div class="asof-note">{status_text}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="asof-note">{status_text}</div>', unsafe_allow_html=True)
 
     latest_ratio = float(base.iloc[-1]["ratio"])
     metric_values = (
