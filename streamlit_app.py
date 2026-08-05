@@ -1,15 +1,13 @@
-"""Index-ratio dashboard using rolling OLS trend and residual signals."""
+"""Index-ratio dashboard using fixed-window OLS trend signals."""
 
 from __future__ import annotations
 
 from datetime import datetime
 
 import akshare as ak
-import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from plotly.subplots import make_subplots
 
 from analytics import WINDOW_YEARS, build_pair_models, consensus_snapshot
 
@@ -263,10 +261,7 @@ def make_sparkline(model):
 
 
 def make_detail_chart(model, title):
-    fig = make_subplots(
-        rows=2, cols=1, shared_xaxes=True,
-        row_heights=[0.69, 0.31], vertical_spacing=0.075,
-    )
+    fig = go.Figure()
     band_styles = {
         3: ("rgba(237,218,164,.13)", "rgba(221,197,129,.10)"),
         2: ("rgba(157,207,179,.13)", "rgba(117,184,147,.10)"),
@@ -277,51 +272,36 @@ def make_detail_chart(model, title):
         fig.add_trace(go.Scatter(
             x=model.index, y=model[f"upper_{level}"], mode="lines",
             line=dict(color=line, width=.55), showlegend=False, hoverinfo="skip",
-        ), row=1, col=1)
+        ))
         fig.add_trace(go.Scatter(
             x=model.index, y=model[f"lower_{level}"], mode="lines",
             line=dict(color=line, width=.55), fill="tonexty", fillcolor=fill,
             name=f"±{level}残差σ", showlegend=False, hoverinfo="skip",
-        ), row=1, col=1)
+        ))
     fig.add_trace(go.Scatter(
         x=model.index, y=model["center"], name="OLS趋势线",
         line=dict(color="#58c878", width=2.0, dash="dash"),
         hovertemplate="趋势中枢 %{y:.4f}<extra></extra>",
-    ), row=1, col=1)
+    ))
     fig.add_trace(go.Scatter(
         x=model.index, y=model["ratio"], name="实际比值",
         line=dict(color="#d78963", width=1.8),
         hovertemplate="比值 %{y:.4f}<extra></extra>",
-    ), row=1, col=1)
-
-    colors = ["#b5a3f4" if z >= 0 else "#7ecce2" for z in model["zscore"]]
-    fig.add_trace(go.Bar(
-        x=model.index, y=model["zscore"], name="残差Z",
-        marker_color=colors, opacity=.78,
-        hovertemplate="残差Z %{y:+.2f}σ<extra></extra>",
-    ), row=2, col=1)
-    for value, color in (
-        (2, "#63c4df"), (-2, "#63c4df"),
-        (3, "#edca61"), (-3, "#edca61"),
-        (4, "#63c4df"), (-4, "#63c4df"),
-    ):
-        fig.add_hline(y=value, line_dash="dash", line_color=color, line_width=1.05, row=2, col=1)
-    fig.add_hline(y=0, line_color="#cfd3ce", line_width=.7, row=2, col=1)
+    ))
     fig.update_layout(
         title=dict(text=title, font=dict(color="#3d423e", size=16), x=.03, y=.98),
-        height=610, template="plotly_white",
+        height=470, template="plotly_white",
         paper_bgcolor="#fbfbf8", plot_bgcolor="#fbfbf8",
         legend=dict(
             orientation="h", y=1.055, x=.03,
             font=dict(color="#888c87", size=11), bgcolor="rgba(0,0,0,0)",
         ),
-        margin=dict(t=62, b=30, l=62, r=28), bargap=.22, hovermode="x unified",
+        margin=dict(t=62, b=34, l=62, r=28), hovermode="x unified",
         hoverlabel=dict(bgcolor="#ffffff", bordercolor="#e6e4de", font=dict(color="#444844")),
     )
     fig.update_xaxes(gridcolor="#ecece7", gridwidth=.7, zeroline=False, tickfont=dict(color="#929691"))
     fig.update_yaxes(gridcolor="#e7e8e3", gridwidth=.7, zeroline=False, tickfont=dict(color="#929691"))
-    fig.update_yaxes(title_text="比值", title_font=dict(color="#737873"), row=1, col=1)
-    fig.update_yaxes(title_text="残差Z", title_font=dict(color="#737873"), row=2, col=1)
+    fig.update_yaxes(title_text="比值", title_font=dict(color="#737873"))
     return fig
 
 
