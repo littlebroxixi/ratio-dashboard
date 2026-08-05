@@ -39,6 +39,21 @@
 
 首页继续使用OLS多周期确认规则；平均值方法作为详情页右侧的对照模型，不与OLS确认数混合。
 
+## 数据来源
+
+- 长期历史底表：用户从同花顺 iFinD 下载的中证1000、中证500和沪深300日线点位，已剔除4条非交易日记录。
+- 每日正式收盘：优先通过同花顺 Quant API 追加，并覆盖最近30天重叠区间以保持精度。
+- AkShare：仅用于交叉校验、同花顺暂时不可用时补齐缺口，以及盘中参考；不会覆盖已有同花顺数据。
+- 所有指数比值均在网站内用原始点位重新计算，不使用预先四舍五入的比值列。
+
+部署时在 Streamlit Secrets 中配置：
+
+```toml
+IFIND_REFRESH_TOKEN = "你的同花顺 refresh_token"
+```
+
+真实令牌不得写入代码库。当前令牌到期前需要在 Streamlit Secrets 中替换。
+
 ## 运行
 
 ```bash
@@ -49,5 +64,5 @@ streamlit run streamlit_app.py
 ## 测试
 
 ```bash
-python -m unittest -v test_analytics.py test_app_smoke.py
+python -m unittest -v test_analytics.py test_data_sources.py test_app_smoke.py
 ```

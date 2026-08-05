@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 
 import akshare as ak
@@ -10,6 +11,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from analytics import WINDOW_YEARS, build_pair_models, consensus_snapshot, slice_asof
+from data_sources import load_market_history
 
 
 CORE_WINDOW_YEARS = (3, 5, 7)
@@ -201,6 +203,8 @@ st.markdown(
 
 @st.cache_data(ttl=60)
 def get_realtime_quotes():
+    if datetime.now().weekday() >= 5:
+        return None
     try:
         spot = ak.stock_zh_index_spot_sina()
         target = spot[spot["代码"].isin(["sh000300", "sh000905", "sh000852"])]
@@ -210,20 +214,34 @@ def get_realtime_quotes():
         return None
 
 
-@st.cache_data(ttl=86400)
+def read_secret(name):
+    value = os.getenv(name)
+    if value:
+        return value
+    try:
+        return st.secrets.get(name)
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=3600)
 def load_data():
-    series = []
-    for symbol, column in (
-        ("sh000300", "hs300"),
-        ("sh000905", "zz500"),
-        ("sh000852", "zz1000"),
-    ):
-        item = ak.stock_zh_index_daily(symbol=symbol)
-        item["date"] = pd.to_datetime(item["date"])
-        item = item.set_index("date")[["close"]].rename(columns={"close": column})
-        series.append(item)
-    df = series[0].join(series[1], how="outer").join(series[2], how="outer")
-    return df[~df.index.duplicated(keep="last")].sort_index()
+    return load_market_history(
+        refresh_token=read_secret("IFIND_REFRESH_TOKEN"),
+        access_token=read_secret("IFIND_ACCESS_TOKEN"),
+    )
+
+
+def source_summary(metadata, is_realtime=False):
+    if metadata.get("ifind_configured") and not metadata.get("ifind_error"):
+        close_source = "同花顺日更"
+    elif metadata.get("fallback_dates"):
+        close_source = f"AkShare临时补位{metadata['fallback_dates']}日"
+    else:
+        close_source = "同花顺历史底表"
+    if is_realtime:
+        return f"{close_source} · AkShare盘中参考"
+    return close_source
 
 
 def signal_class(zscore):
@@ -609,7 +627,7 @@ def render_detail(pair_key, df):
 
 
 def load_all_models():
-    df = load_data()
+    df, data_metadata = load_data()
     realtime = get_realtime_quotes()
     is_realtime = False
     if realtime and len(realtime) == 3:
@@ -625,7 +643,7 @@ def load_all_models():
         key: build_pair_models(df, config["numerator"], config["denominator"])
         for key, config in PAIR_CONFIG.items()
     }
-    return df, pairs, is_realtime
+    return df, pairs, is_realtime, data_metadata
 
 
 if "page" not in st.session_state:
@@ -633,10 +651,11 @@ if "page" not in st.session_state:
 if "_pairs" not in st.session_state:
     try:
         with st.spinner("加载行情并计算3 / 5 / 7年固定窗口..."):
-            df, pairs, is_realtime = load_all_models()
+            df, pairs, is_realtime, data_metadata = load_all_models()
             st.session_state._df = df
             st.session_state._pairs = pairs
             st.session_state._is_realtime = is_realtime
+            st.session_state._data_metadata = data_metadata
     except Exception as exc:
         st.error(f"数据加载失败：{exc}")
         st.stop()
@@ -644,10 +663,12 @@ if "_pairs" not in st.session_state:
 df = st.session_state._df
 pairs = st.session_state._pairs
 is_realtime = st.session_state._is_realtime
+data_metadata = st.session_state._data_metadata
 
 
 if st.session_state.page == "home":
-    live = '<span class="live-dot on"></span>盘中实时' if is_realtime else '<span class="live-dot off"></span>收盘数据'
+    live = '<span class="live-dot on"></span>盘中参考' if is_realtime else '<span class="live-dot off"></span>收盘数据'
+    source_text = source_summary(data_metadata, is_realtime)
     st.markdown(
         f"""
         <div class="topbar">
@@ -657,7 +678,7 @@ if st.session_state.page == "home":
             </div>
             <div class="topbar-meta">
                 <span class="model-badge">1 / 3 / 5 / 7 / 10 / 15 / 20年 / 全局</span><br>
-                {live} · 数据截至 {df.index[-1].strftime('%Y-%m-%d')} · {len(df):,}个行情日期
+                {live} · {source_text} · 数据截至 {df.index[-1].strftime('%Y-%m-%d')}
             </div>
         </div>
         """,
@@ -668,7 +689,7 @@ if st.session_state.page == "home":
         if st.button("刷新数据", key="refresh"):
             get_realtime_quotes.clear()
             load_data.clear()
-            for key in ("_df", "_pairs", "_is_realtime"):
+            for key in ("_df", "_pairs", "_is_realtime", "_data_metadata"):
                 st.session_state.pop(key, None)
             st.rerun()
 
@@ -681,7 +702,7 @@ if st.session_state.page == "home":
                     st.session_state.page = pair_key
                     st.rerun()
     st.markdown(
-        '<div class="footer">数据来源：AKShare · 统计模型仅用于监控与研究，不构成交易建议</div>',
+        '<div class="footer">正式历史与每日收盘：同花顺 iFinD · AkShare仅用于盘中参考、校验与故障补位 · 统计模型不构成交易建议</div>',
         unsafe_allow_html=True,
     )
 else:

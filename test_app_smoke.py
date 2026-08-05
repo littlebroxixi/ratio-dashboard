@@ -40,6 +40,7 @@ class DashboardSmokeTest(unittest.TestCase):
             app.run(timeout=30)
             self.assertEqual(len(app.exception), 0)
             self.assertIn("指数比值趋势偏离看板", app.markdown[1].value)
+            self.assertIn("同花顺", " ".join(item.value for item in app.markdown))
             self.assertEqual(len(app.button), 4)
             app.button[1].click().run(timeout=30)
             self.assertEqual(len(app.exception), 0)
@@ -56,7 +57,7 @@ class DashboardSmokeTest(unittest.TestCase):
             for label in ("回到最新", "1年", "3年", "5年", "7年", "全局"):
                 self.assertIn(label, button_labels)
             for label in ("10年", "15年", "20年"):
-                self.assertNotIn(label, button_labels)
+                self.assertIn(label, button_labels)
 
             app.date_input[0].set_value(date(2023, 6, 10)).run(timeout=30)
             self.assertEqual(len(app.exception), 0)
