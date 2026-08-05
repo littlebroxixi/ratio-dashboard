@@ -131,13 +131,15 @@ st.markdown(
     border-color: #d9ddd6 !important;
 }
 [class*="st-key-pair_card_"] [class*="st-key-detail_"] {
-    position: absolute; inset: 0; z-index: 20; margin: 0;
+    position: absolute; inset: 0 !important; z-index: 20; margin: 0;
+    width: 100% !important; max-width: none !important; height: 100% !important;
 }
 [class*="st-key-pair_card_"] [class*="st-key-detail_"] [data-testid="stButton"] {
-    width: 100%; height: 100%;
+    width: 100% !important; max-width: none !important; height: 100% !important;
 }
 [class*="st-key-pair_card_"] [class*="st-key-detail_"] button {
-    width: 100%; height: 100%; min-height: 100%; padding: 0;
+    width: 100% !important; max-width: none !important;
+    height: 100% !important; min-height: 100%; padding: 0;
     opacity: 0; border: 0; cursor: pointer;
 }
 [class*="st-key-window_toggle_"] [data-testid="stBaseButton-primary"] {
