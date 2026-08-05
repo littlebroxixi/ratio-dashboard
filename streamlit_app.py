@@ -72,16 +72,6 @@ st.markdown(
 }
 .topbar h1 { margin: 0; color: #2f3431; font-size: 1.65rem; font-weight: 650; letter-spacing: -.02em; }
 .topbar p { margin: 7px 0 0; color: #8b8e89; font-size: .82rem; }
-.topbar-meta { color: #929590; font-size: .76rem; text-align: right; line-height: 1.8; }
-.model-badge {
-    display: inline-flex; align-items: center; padding: 5px 10px; border-radius: 999px;
-    color: #6aa27b; background: #f0f7f1; border: 1px solid #dcecdf;
-    font-size: .7rem; font-weight: 600; letter-spacing: .02em;
-}
-.live-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 5px; }
-.live-dot.on { background: #5bc77a; box-shadow: 0 0 7px rgba(91,199,122,.45); }
-.live-dot.off { background: #b2b4af; }
-
 [data-testid="stVerticalBlockBorderWrapper"] {
     background: rgba(255,255,255,.78);
     border-color: #e8e7e1 !important;
@@ -180,8 +170,6 @@ st.markdown(
 .section-divider { height: 1px; background: #e5e5df; margin: 30px 0 26px; }
 .method-note { color: #737772; font-size: .78rem; line-height: 1.75; }
 .method-note code { color: #4f9667; background: #edf6ef; }
-.footer { color: #b0b2ad; text-align: center; font-size: .68rem; padding: 24px 0 10px; }
-
 [data-testid="stExpander"] details, h5 { color: #4c514d !important; }
 [data-testid="stExpander"] details { background: rgba(255,255,255,.55); border-color: #e7e6e0; }
 [data-testid="stDateInput"] input { background: #ffffff; border-color: #deddd7; color: #454945; }
@@ -189,7 +177,6 @@ st.markdown(
 @media (max-width: 900px) {
     .metric-grid { grid-template-columns: repeat(2, 1fr); }
     .topbar { flex-direction: column; }
-    .topbar-meta { text-align: left; }
 }
 @media (max-width: 560px) {
     .block-container { padding: 1rem; }
@@ -230,18 +217,6 @@ def load_data():
         refresh_token=read_secret("IFIND_REFRESH_TOKEN"),
         access_token=read_secret("IFIND_ACCESS_TOKEN"),
     )
-
-
-def source_summary(metadata, is_realtime=False):
-    if metadata.get("ifind_configured") and not metadata.get("ifind_error"):
-        close_source = "同花顺日更"
-    elif metadata.get("fallback_dates"):
-        close_source = f"AkShare临时补位{metadata['fallback_dates']}日"
-    else:
-        close_source = "同花顺历史底表"
-    if is_realtime:
-        return f"{close_source} · AkShare盘中参考"
-    return close_source
 
 
 def signal_class(zscore):
@@ -408,8 +383,6 @@ def render_pair_card(pair_key, pair):
     st.plotly_chart(make_sparkline(models[5]), width="stretch", config={"displayModeBar": False})
     render_window_grid(models)
     decision = direction_text(pair_key, snapshot.direction)
-    if snapshot.confirmation_count < 2:
-        decision = f"{decision}；目前确认度不足，等待至少两个窗口超过±2σ"
     st.markdown(f'<div class="decision-box {tone}">{decision}</div>', unsafe_allow_html=True)
 
 
@@ -667,18 +640,12 @@ data_metadata = st.session_state._data_metadata
 
 
 if st.session_state.page == "home":
-    live = '<span class="live-dot on"></span>盘中参考' if is_realtime else '<span class="live-dot off"></span>收盘数据'
-    source_text = source_summary(data_metadata, is_realtime)
     st.markdown(
-        f"""
+        """
         <div class="topbar">
             <div>
                 <h1>指数比值趋势偏离看板</h1>
                 <p>用固定OLS窗口对照当前比值位置，详情页可切换1年至20年及全局周期</p>
-            </div>
-            <div class="topbar-meta">
-                <span class="model-badge">1 / 3 / 5 / 7 / 10 / 15 / 20年 / 全局</span><br>
-                {live} · {source_text} · 数据截至 {df.index[-1].strftime('%Y-%m-%d')}
             </div>
         </div>
         """,
@@ -701,9 +668,5 @@ if st.session_state.page == "home":
                 if st.button("查看全部固定窗口 →", key=f"detail_{pair_key}"):
                     st.session_state.page = pair_key
                     st.rerun()
-    st.markdown(
-        '<div class="footer">正式历史与每日收盘：同花顺 iFinD · AkShare仅用于盘中参考、校验与故障补位 · 统计模型不构成交易建议</div>',
-        unsafe_allow_html=True,
-    )
 else:
     render_detail(st.session_state.page, df)
