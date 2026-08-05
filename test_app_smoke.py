@@ -46,14 +46,14 @@ class DashboardSmokeTest(unittest.TestCase):
             self.assertIn("IC / IF 固定窗口分析", app.markdown[1].value)
             self.assertEqual(len(app.radio), 0)
             detail_text = " ".join(item.value for item in app.markdown)
-            for label in ("3年固定窗口", "5年固定窗口", "7年固定窗口"):
+            for label in ("1年固定窗口", "3年固定窗口", "5年固定窗口", "7年固定窗口"):
                 self.assertIn(label, detail_text)
             self.assertIn("OLS趋势＋残差标准差", detail_text)
             self.assertIn("平均值＋普通标准差", detail_text)
-            self.assertEqual(len(app.get("plotly_chart")), 6)
+            self.assertEqual(len(app.get("plotly_chart")), 8)
             self.assertEqual(len(app.date_input), 1)
             button_labels = {button.label for button in app.button}
-            for label in ("回到最新", "1个月前", "3个月前", "6个月前", "1年前"):
+            for label in ("回到最新", "1年", "3年", "5年", "7年", "10年", "15年", "20年"):
                 self.assertIn(label, button_labels)
 
             app.date_input[0].set_value(date(2023, 6, 10)).run(timeout=30)
@@ -62,10 +62,11 @@ class DashboardSmokeTest(unittest.TestCase):
             self.assertIn("2023-06-09", sliced_text)
             self.assertIn("之后的数据完全不参与计算", sliced_text)
 
-            previous_date = app.date_input[0].value
-            next(button for button in app.button if button.label == "1个月前").click().run(timeout=30)
+            next(button for button in app.button if button.label == "1年").click().run(timeout=30)
             self.assertEqual(len(app.exception), 0)
-            self.assertNotEqual(app.date_input[0].value, previous_date)
+            self.assertEqual(len(app.get("plotly_chart")), 6)
+            hidden_text = " ".join(item.value for item in app.markdown)
+            self.assertNotIn("1年固定窗口", hidden_text)
         finally:
             ak.stock_zh_index_daily = original_daily
             ak.stock_zh_index_spot_sina = original_spot

@@ -12,6 +12,10 @@ import streamlit as st
 from analytics import WINDOW_YEARS, build_pair_models, consensus_snapshot, slice_asof
 
 
+CORE_WINDOW_YEARS = (3, 5, 7)
+DEFAULT_VISIBLE_YEARS = (1, 3, 5, 7)
+
+
 st.set_page_config(
     page_title="指数比值趋势偏离看板",
     page_icon="📈",
@@ -122,6 +126,17 @@ st.markdown(
     border: 1px solid #dfeae1; border-radius: 10px; font-weight: 600;
 }
 .stButton > button:hover { border-color: #bcd6c2; color: #3f7652; }
+.stButton > button:disabled { color: #b6b8b3; background: #f2f2ee; border-color: #e5e4df; }
+[class*="st-key-window_toggle_"] [data-testid="stBaseButton-primary"] {
+    color: #ffffff !important; background: #d78963 !important; border-color: #d78963 !important;
+    box-shadow: 0 3px 10px rgba(215,137,99,.18);
+}
+[class*="st-key-window_toggle_"] [data-testid="stBaseButton-secondary"] {
+    color: #858984 !important; background: #f1f1ed !important; border-color: #e2e1dc !important;
+}
+[class*="st-key-window_toggle_"] button:disabled {
+    color: #c1c3be !important; background: #f5f5f2 !important; border-color: #ecebe7 !important;
+}
 
 .detail-head { margin: 4px 0 12px; }
 .detail-head h1 { margin: 0; color: #303431; font-size: 1.55rem; font-weight: 650; }
@@ -205,8 +220,8 @@ def load_data():
         item["date"] = pd.to_datetime(item["date"])
         item = item.set_index("date")[["close"]].rename(columns={"close": column})
         series.append(item)
-    df = series[0].join(series[1], how="inner").join(series[2], how="inner")
-    return df[~df.index.duplicated(keep="last")].sort_index().dropna()
+    df = series[0].join(series[1], how="outer").join(series[2], how="outer")
+    return df[~df.index.duplicated(keep="last")].sort_index()
 
 
 def signal_class(zscore):
@@ -330,7 +345,7 @@ def comparison_y_range(*models):
 
 def render_window_grid(models):
     cells = []
-    for years in WINDOW_YEARS:
+    for years in CORE_WINDOW_YEARS:
         latest = models[years].iloc[-1]
         zscore = float(latest["zscore"])
         _, level_class = signal_class(zscore)
@@ -349,7 +364,7 @@ def render_pair_card(pair_key, pair):
     config = PAIR_CONFIG[pair_key]
     base = pair["base"]
     models = pair["models"]
-    snapshot = consensus_snapshot(models)
+    snapshot = consensus_snapshot({years: models[years] for years in CORE_WINDOW_YEARS})
     latest_ratio = float(base.iloc[-1]["ratio"])
     previous_ratio = float(base.iloc[-2]["ratio"])
     change_pct = (latest_ratio / previous_ratio - 1.0) * 100.0
@@ -382,6 +397,16 @@ def reset_asof_date(state_key, latest_date):
     st.session_state[state_key] = latest_date
 
 
+def toggle_visible_window(state_key, years):
+    selected = set(st.session_state.get(state_key, DEFAULT_VISIBLE_YEARS))
+    if years in selected:
+        if len(selected) > 1:
+            selected.remove(years)
+    else:
+        selected.add(years)
+    st.session_state[state_key] = sorted(selected)
+
+
 def render_detail(pair_key, df):
     config = PAIR_CONFIG[pair_key]
     if st.button("← 返回首页", key=f"back_{pair_key}"):
@@ -394,21 +419,16 @@ def render_detail(pair_key, df):
         unsafe_allow_html=True,
     )
 
-    latest_date = df.index[-1].date()
-    earliest_date = df.index[7 * 252 - 1].date()
+    pair_history = df[[config["numerator"], config["denominator"]]].dropna()
+    latest_date = pair_history.index[-1].date()
+    earliest_date = pair_history.index[7 * 252 - 1].date()
     date_key = f"asof_date_{pair_key}"
     stored_date = st.session_state.get(date_key)
     if stored_date is None or stored_date < earliest_date or stored_date > latest_date:
         st.session_state[date_key] = latest_date
 
-    quick_dates = {
-        "1个月前": max((pd.Timestamp(latest_date) - pd.DateOffset(months=1)).date(), earliest_date),
-        "3个月前": max((pd.Timestamp(latest_date) - pd.DateOffset(months=3)).date(), earliest_date),
-        "6个月前": max((pd.Timestamp(latest_date) - pd.DateOffset(months=6)).date(), earliest_date),
-        "1年前": max((pd.Timestamp(latest_date) - pd.DateOffset(years=1)).date(), earliest_date),
-    }
-    date_col, reset_col, *quick_cols = st.columns(
-        [2.8, 1, 1, 1, 1, 1], vertical_alignment="bottom"
+    date_col, reset_col, *window_cols = st.columns(
+        [2.6, 1.05, .7, .7, .7, .7, .8, .8, .8], vertical_alignment="bottom"
     )
     with reset_col:
         st.button(
@@ -425,21 +445,38 @@ def render_detail(pair_key, df):
             key=date_key,
             format="YYYY-MM-DD",
         )
-    for column, (label, target_date) in zip(quick_cols, quick_dates.items()):
-        with column:
-            st.button(
-                label,
-                key=f"quick_{pair_key}_{label}",
-                on_click=reset_asof_date,
-                args=(date_key, target_date),
-            )
-
-    asof_df, actual_date = slice_asof(df, requested_date)
+    asof_df, actual_date = slice_asof(pair_history, requested_date)
     pair = build_pair_models(asof_df, config["numerator"], config["denominator"])
     base = pair["base"]
     models = pair["models"]
     mean_models = pair["mean_models"]
-    snapshot = consensus_snapshot(models)
+    snapshot = consensus_snapshot({years: models[years] for years in CORE_WINDOW_YEARS})
+    visible_key = f"visible_windows_{pair_key}"
+    available_years = set(models)
+    if visible_key not in st.session_state:
+        st.session_state[visible_key] = [
+            years for years in DEFAULT_VISIBLE_YEARS if years in available_years
+        ]
+    selected_years = sorted(
+        years for years in st.session_state[visible_key] if years in available_years
+    )
+    if not selected_years:
+        selected_years = [
+            years for years in DEFAULT_VISIBLE_YEARS if years in available_years
+        ]
+    if selected_years != st.session_state[visible_key]:
+        st.session_state[visible_key] = selected_years
+
+    for column, years in zip(window_cols, WINDOW_YEARS):
+        with column:
+            st.button(
+                f"{years}年",
+                key=f"window_toggle_{pair_key}_{years}",
+                type="primary" if years in selected_years else "secondary",
+                disabled=years not in available_years,
+                on_click=toggle_visible_window,
+                args=(visible_key, years),
+            )
     adjusted = pd.Timestamp(requested_date).date() != actual_date.date()
     status_text = (
         f"{requested_date:%Y-%m-%d}不是交易日，已自动使用此前最近的交易日 "
@@ -447,18 +484,20 @@ def render_detail(pair_key, df):
         if adjusted
         else f"所有计算仅使用 <strong>{actual_date:%Y-%m-%d}</strong> 及以前的数据"
     )
+    unavailable_years = [years for years in WINDOW_YEARS if years not in available_years]
+    if unavailable_years:
+        status_text += "；" + "、".join(f"{years}年" for years in unavailable_years) + "历史不足，暂不可用"
     st.markdown(f'<div class="asof-note">{status_text}</div>', unsafe_allow_html=True)
 
     latest_ratio = float(base.iloc[-1]["ratio"])
-    metric_values = (
-        ("当前比值", f"{latest_ratio:.4f}"),
-        ("3年 OLS Z", f'{models[3].iloc[-1]["zscore"]:+.2f}σ'),
-        ("3年 均值Z", f'{mean_models[3].iloc[-1]["zscore"]:+.2f}σ'),
-        ("5年 OLS Z", f'{models[5].iloc[-1]["zscore"]:+.2f}σ'),
-        ("5年 均值Z", f'{mean_models[5].iloc[-1]["zscore"]:+.2f}σ'),
-        ("7年 OLS Z", f'{models[7].iloc[-1]["zscore"]:+.2f}σ'),
-        ("7年 均值Z", f'{mean_models[7].iloc[-1]["zscore"]:+.2f}σ'),
-        ("OLS多周期状态", f"{snapshot.label} · {snapshot.confirmation_count}/3"),
+    metric_values = [("当前比值", f"{latest_ratio:.4f}")]
+    for years in selected_years:
+        metric_values.extend((
+            (f"{years}年 OLS Z", f'{models[years].iloc[-1]["zscore"]:+.2f}σ'),
+            (f"{years}年 均值Z", f'{mean_models[years].iloc[-1]["zscore"]:+.2f}σ'),
+        ))
+    metric_values.append(
+        ("OLS多周期状态", f"{snapshot.label} · {snapshot.confirmation_count}/3")
     )
     cards = "".join(
         f'<div class="metric-item"><div class="metric-label">{label}</div><div class="metric-value">{value}</div></div>'
@@ -467,12 +506,13 @@ def render_detail(pair_key, df):
     st.markdown(f'<div class="metric-grid">{cards}</div>', unsafe_allow_html=True)
     st.markdown(
         f'<div class="fixed-intro">本页已切片到 {actual_date:%Y-%m-%d}，之后的数据完全不参与计算。'
+        f'当前展示 {"、".join(f"{years}年" for years in selected_years)} 窗口。'
         '每个时间窗口左右使用完全相同的样本和纵轴尺度。左侧用OLS直线作为中枢，'
         '波动取OLS残差标准差；右侧用固定算术平均值作为中枢，波动取比值本身的普通样本标准差。</div>',
         unsafe_allow_html=True,
     )
 
-    for position, years in enumerate(WINDOW_YEARS):
+    for position, years in enumerate(selected_years):
         ols_model = models[years]
         mean_model = mean_models[years]
         ols_latest = ols_model.iloc[-1]
@@ -526,7 +566,7 @@ def render_detail(pair_key, df):
                 width="stretch",
                 config={"displayModeBar": True, "displaylogo": False},
             )
-        if position < len(WINDOW_YEARS) - 1:
+        if position < len(selected_years) - 1:
             st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
     with st.expander("计算口径与使用说明"):
@@ -535,8 +575,9 @@ def render_detail(pair_key, df):
             <div class="method-note">
             <p><strong>观察日期切片：</strong>先删除观察日期之后的全部行情，再从剩余数据末端截取3年、5年和7年样本。
             因此历史观察日的中枢、标准差和Z值不会受到未来行情影响；节假日自动回退至此前最近交易日。</p>
-            <p><strong>固定窗口：</strong>3年、5年、7年分别截取最近756、1260、1764个交易日，
-            每个区间独立做一次最小二乘拟合，不按日滚动重算。</p>
+            <p><strong>固定窗口：</strong>可选择1、3、5、7、10、15和20年；每个窗口截取最近
+            <code>年数 × 252</code>个交易日，独立计算中枢和波动率。高亮按钮表示展示，灰色表示隐藏；
+            历史数据不足的窗口不可点击。</p>
             <p><strong>趋势中枢：</strong>当前比值在该固定趋势线上的对应位置。</p>
             <p><strong>残差标准差：</strong><code>sqrt(SSE / (N - 2))</code>，减去2是因为趋势线估计了截距和斜率。</p>
             <p><strong>平均值法：</strong>右侧中枢是固定窗口内全部比值的算术平均值；普通样本标准差为
@@ -597,11 +638,11 @@ if st.session_state.page == "home":
         <div class="topbar">
             <div>
                 <h1>指数比值趋势偏离看板</h1>
-                <p>用3 / 5 / 7年固定OLS窗口对照当前比值位置，一次查看不同周期结论</p>
+                <p>用固定OLS窗口对照当前比值位置，详情页可切换1年至20年周期</p>
             </div>
             <div class="topbar-meta">
-                <span class="model-badge">3 / 5 / 7年固定窗口</span><br>
-                {live} · 数据截至 {df.index[-1].strftime('%Y-%m-%d')} · {len(df):,}个共同交易日
+                <span class="model-badge">1 / 3 / 5 / 7 / 10 / 15 / 20年</span><br>
+                {live} · 数据截至 {df.index[-1].strftime('%Y-%m-%d')} · {len(df):,}个行情日期
             </div>
         </div>
         """,

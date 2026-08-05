@@ -20,7 +20,7 @@ import pandas as pd
 
 
 TRADING_DAYS = 252
-WINDOW_YEARS = (3, 5, 7)
+WINDOW_YEARS = (1, 3, 5, 7, 10, 15, 20)
 
 
 @dataclass(frozen=True)
@@ -133,8 +133,9 @@ def build_pair_models(
     base["price_a"] = df[numerator]
     base["price_b"] = df[denominator]
     base = base.replace([np.inf, -np.inf], np.nan).dropna().sort_index()
-    models = {years: fixed_ols_signal(base, years) for years in windows}
-    mean_models = {years: fixed_mean_signal(base, years) for years in windows}
+    available_windows = tuple(years for years in windows if len(base) >= years * TRADING_DAYS)
+    models = {years: fixed_ols_signal(base, years) for years in available_windows}
+    mean_models = {years: fixed_mean_signal(base, years) for years in available_windows}
     return {"base": base, "models": models, "mean_models": mean_models}
 
 

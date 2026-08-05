@@ -91,9 +91,16 @@ class FixedOlsTests(unittest.TestCase):
         df = sample_base().rename(columns={"price_a": "a", "price_b": "b"})[["a", "b"]]
         result = build_pair_models(df, "a", "b")
 
-        self.assertEqual(set(result["models"]), {3, 5, 7})
-        self.assertEqual(set(result["mean_models"]), {3, 5, 7})
+        self.assertEqual(set(result["models"]), {1, 3, 5, 7})
+        self.assertEqual(set(result["mean_models"]), {1, 3, 5, 7})
         self.assertTrue(result["models"][5].index.equals(result["mean_models"][5].index))
+
+    def test_long_history_unlocks_10_15_and_20_year_windows(self):
+        df = sample_base(5200).rename(columns={"price_a": "a", "price_b": "b"})[["a", "b"]]
+        result = build_pair_models(df, "a", "b")
+
+        self.assertEqual(set(result["models"]), {1, 3, 5, 7, 10, 15, 20})
+        self.assertEqual(len(result["models"][20]), 20 * 252)
 
 
 if __name__ == "__main__":
