@@ -48,7 +48,7 @@ class BtcGoldTest(unittest.TestCase):
                     btc_gold.load_research()
 
     @patch.object(PagesManager, "uses_pages_directory", False)
-    def test_detail_history_and_research_filters(self):
+    def test_detail_history_and_shared_layout(self):
         path = Path(__file__).parent / "streamlit_app.py"
         with patch("akshare.stock_zh_index_daily", fake_daily), patch("akshare.stock_zh_index_spot_sina", fake_spot):
             app = AppTest.from_file(str(path)).run(timeout=30)
@@ -60,8 +60,8 @@ class BtcGoldTest(unittest.TestCase):
         self.assertEqual(len(app.tabs), 0)
         self.assertEqual(len(app.multiselect), 0)
         self.assertEqual(len(app.metric), 0)
-        self.assertEqual(len(app.dataframe), 3)
-        self.assertEqual(len(app.dataframe[0].value), 36)
+        self.assertEqual(len(app.dataframe), 0)
+        self.assertEqual([expander.label for expander in app.expander], ["计算口径与使用说明"])
         detail_text = " ".join(item.value for item in app.markdown)
         self.assertIn('class="detail-head"', detail_text)
         self.assertIn('class="metric-item metric-pair"', detail_text)
@@ -75,13 +75,6 @@ class BtcGoldTest(unittest.TestCase):
         self.assertNotIn("1年固定窗口", " ".join(item.value for item in app.markdown))
         app.button(key="window_toggle_btc_gold_1").click().run(timeout=30)
         self.assertEqual(len(app.get("plotly_chart")), 8)
-        app.selectbox(key="fixed_year").set_value(5).run(timeout=30)
-        self.assertEqual(len(app.exception), 0)
-        self.assertTrue((app.dataframe[0].value["样本数"] == 0).all())
-        self.assertTrue(app.dataframe[0].value["平均收益"].isna().all())
-        app.radio[0].set_value("收敛幅度").run(timeout=30)
-        self.assertEqual(len(app.exception), 0)
-        self.assertTrue(set(app.dataframe[1].value["目标参数（σ）"]) <= {0.5, 1, 1.5, 2, 2.5, 3})
         app.date_input[0].set_value(date(2022, 6, 10)).run(timeout=30)
         self.assertEqual(len(app.exception), 0)
         self.assertIn("1年", [button.label for button in app.button])

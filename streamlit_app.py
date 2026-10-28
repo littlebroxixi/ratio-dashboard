@@ -13,7 +13,6 @@ import streamlit as st
 from analytics import Consensus, WINDOW_YEARS, build_pair_models, consensus_snapshot, slice_asof
 from data_sources import load_market_history
 from btc_gold import load_daily as load_btc_gold_daily, build_dashboard_models as build_btc_gold_models
-from btc_gold_view import render_btc_gold_research
 
 
 CORE_WINDOW_YEARS = (3, 5, 7)
@@ -658,8 +657,6 @@ def render_detail(pair_key, df):
             method_note = method_note.replace("同一批交易日", "同一批共同日线")
             method_note = method_note.replace("</div>", "<p><strong>美元双腿：</strong>BTCUSDm日收盘 ÷ XAUUSDm日收盘；保留周日，不补值。OLS仍按观测序号拟合；展示的年化斜率按样本实际跨度换算，不使用252日。不同品种的日线标签不能保证报价时刻完全同步。</p></div>")
         st.markdown(method_note, unsafe_allow_html=True)
-    if calendar_year:
-        render_btc_gold_research(df)
 
 
 def load_all_models():
