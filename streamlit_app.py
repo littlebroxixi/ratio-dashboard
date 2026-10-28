@@ -12,6 +12,7 @@ import streamlit as st
 
 from analytics import WINDOW_YEARS, build_pair_models, consensus_snapshot, slice_asof
 from data_sources import load_market_history
+from btc_gold import load_daily as load_btc_gold_daily, snapshot as btc_gold_snapshot
 
 
 CORE_WINDOW_YEARS = (3, 5, 7)
@@ -274,8 +275,8 @@ def direction_text(pair_key, direction):
     return "暂无明确方向，等待窗口形成一致偏离"
 
 
-def make_sparkline(model):
-    recent = model.tail(252)
+def make_sparkline(model, calendar_year=False):
+    recent = model.loc[model.index[-1] - pd.DateOffset(years=1):] if calendar_year else model.tail(252)
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=recent.index, y=recent["upper_2"], mode="lines",
@@ -417,6 +418,51 @@ def render_pair_card(pair_key, pair):
 
 def reset_asof_date(state_key, latest_date):
     st.session_state[state_key] = latest_date
+
+
+def render_btc_gold_module():
+    st.divider()
+    st.subheader("BTC / 黄金")
+    st.caption("BTC / 美元日收盘 ÷ 黄金 / 美元日收盘 · 日线相对价格研究")
+    try:
+        daily = load_btc_gold_daily()
+        snapshots = {years: btc_gold_snapshot(daily, years) for years in CORE_WINDOW_YEARS}
+    except (OSError, ValueError, KeyError) as exc:
+        st.warning(f"BTC / 黄金数据暂不可用：{exc}")
+        return
+    latest = daily.iloc[-1]
+    change = (latest.ratio / daily.ratio.iloc[-2] - 1) * 100
+    zscores = [rows[0]["z"] for rows, _ in snapshots.values()]
+    high, low = sum(z >= 2 for z in zscores), sum(z <= -2 for z in zscores)
+    if max(high, low) >= 2:
+        signal = f"{'正向' if high > low else '负向'}偏离确认 · {max(high, low)}/3 个核心窗口"
+    else:
+        signal = "尚无同向 ±2σ 多窗口确认"
+    with st.container(border=True):
+        left, right = st.columns([1, 2], gap="large")
+        with left:
+            st.metric("当前比值", f"{latest.ratio:.5f}", f"{change:+.2f}% · 较上一共同日期", delta_color="off")
+            st.caption(f"BTC / 美元 {latest.btc_close:,.2f} · 黄金 / 美元 {latest.gold_close:,.3f}")
+            st.markdown(f"**{signal}**")
+            st.caption(f"{daily.index[0]:%Y-%m-%d} 至 {daily.index[-1]:%Y-%m-%d} · {len(daily):,} 条共同日线")
+            st.caption(f"MT5 导出快照；当前截至 {daily.index[-1]:%Y-%m-%d}，非实时行情。")
+            st.page_link("pages/4_BTC_Gold.py", label="打开 BTC / 黄金完整分析 →")
+        with right:
+            st.plotly_chart(make_sparkline(snapshots[5][1]["OLS"], calendar_year=True),
+                            width="stretch", config={"displayModeBar": False}, key="btc_gold_sparkline")
+            cells = []
+            for years, (rows, _) in snapshots.items():
+                ols_z, mean_z = rows[0]["z"], rows[1]["z"]
+                _, level = signal_class(ols_z)
+                tone = "positive" if ols_z > 0 else "negative" if ols_z < 0 else ""
+                cells.append(
+                    f'<div class="window-cell {level} {tone}">'
+                    f'<div class="window-label">{years} 年 · OLS</div>'
+                    f'<div class="window-z">{ols_z:+.2f}σ</div>'
+                    f'<div class="window-meta">均值法 {mean_z:+.2f}σ</div></div>'
+                )
+            st.markdown(f'<div class="window-grid">{"".join(cells)}</div>', unsafe_allow_html=True)
+            st.caption("近一年比值 · 5 年 OLS 中枢与 ±2σ 通道；窗口按实际日历年截取。")
 
 
 def toggle_visible_window(state_key, years):
@@ -702,5 +748,6 @@ if st.session_state.page == "home":
                 if st.button(f"打开 {PAIR_CONFIG[pair_key]['name']} 详情", key=f"detail_{pair_key}"):
                     st.session_state.page = pair_key
                     st.rerun()
+    render_btc_gold_module()
 else:
     render_detail(st.session_state.page, df)
