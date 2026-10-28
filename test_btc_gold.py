@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pandas as pd
 from streamlit.testing.v1 import AppTest
+from streamlit.runtime.pages_manager import PagesManager
 
 import btc_gold
 from test_app_smoke import fake_daily, fake_spot
@@ -38,11 +39,13 @@ class BtcGoldTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "版本不一致"):
                     btc_gold.load_research()
 
+    @patch.object(PagesManager, "uses_pages_directory", False)
     def test_detail_history_and_research_filters(self):
         path = Path(__file__).parent / "streamlit_app.py"
         with patch("akshare.stock_zh_index_daily", fake_daily), patch("akshare.stock_zh_index_spot_sina", fake_spot):
             app = AppTest.from_file(str(path)).run(timeout=30)
-        app.switch_page("pages/4_BTC_Gold.py").run(timeout=30)
+            self.assertEqual(len(app.exception), 0)
+            app.button(key="detail_btc_gold").click().run(timeout=30)
         self.assertEqual(len(app.exception), 0)
         self.assertEqual(len(app.warning), 0)
         self.assertEqual(len(app.get("plotly_chart")), 8)
@@ -63,6 +66,10 @@ class BtcGoldTest(unittest.TestCase):
         self.assertEqual(len(app.exception), 0)
         self.assertEqual(len(app.get("plotly_chart")), 0)
         self.assertTrue(any("不足 3 条" in item.value for item in app.info))
+        app.button(key="btc_gold_back").click().run(timeout=30)
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(app.session_state.page, "home")
+        self.assertEqual(len(app.get("plotly_chart")), 4)
 
 
 if __name__ == "__main__":

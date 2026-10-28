@@ -13,6 +13,7 @@ import streamlit as st
 from analytics import WINDOW_YEARS, build_pair_models, consensus_snapshot, slice_asof
 from data_sources import load_market_history
 from btc_gold import load_daily as load_btc_gold_daily, snapshot as btc_gold_snapshot
+from btc_gold_view import render_btc_gold_detail
 
 
 CORE_WINDOW_YEARS = (3, 5, 7)
@@ -446,7 +447,9 @@ def render_btc_gold_module():
             st.markdown(f"**{signal}**")
             st.caption(f"{daily.index[0]:%Y-%m-%d} 至 {daily.index[-1]:%Y-%m-%d} · {len(daily):,} 条共同日线")
             st.caption(f"MT5 导出快照；当前截至 {daily.index[-1]:%Y-%m-%d}，非实时行情。")
-            st.page_link("pages/4_BTC_Gold.py", label="打开 BTC / 黄金完整分析 →")
+            if st.button("打开 BTC / 黄金完整分析 →", key="detail_btc_gold"):
+                st.session_state.page = "btc_gold"
+                st.rerun()
         with right:
             st.plotly_chart(make_sparkline(snapshots[5][1]["OLS"], calendar_year=True),
                             width="stretch", config={"displayModeBar": False}, key="btc_gold_sparkline")
@@ -749,5 +752,7 @@ if st.session_state.page == "home":
                     st.session_state.page = pair_key
                     st.rerun()
     render_btc_gold_module()
+elif st.session_state.page == "btc_gold":
+    render_btc_gold_detail()
 else:
     render_detail(st.session_state.page, df)
