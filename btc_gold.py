@@ -86,3 +86,32 @@ def snapshot(base, years=None, asof=None):
     return rows, models
 
 
+def build_dashboard_models(daily):
+    """Adapt calendar-based research to the existing dashboard model contract."""
+    base = daily.copy().sort_index()
+    base["ratio"] = base.btc_close / base.gold_close
+    base["price_a"], base["price_b"] = base.btc_close, base.gold_close
+    pair = {"base": base, "models": {}, "mean_models": {},
+            "global_model": None, "global_mean_model": None}
+    if len(base) < 3:
+        return pair
+    available = [y for y in YEARS if base.index[-1] - pd.DateOffset(years=y) >= base.index[0]]
+    for years in [*available, None]:
+        rows, models = snapshot(base, years)
+        for row in rows:
+            model = models[row["method"]]
+            elapsed_years = (model.index[-1] - model.index[0]).days / 365.2425
+            model["zscore"] = model["z"]
+            model["residual_sigma"] = model["sigma"]
+            model["residual"] = model.ratio - model.center
+            # Display scaling only: retain the original observation-index OLS fit.
+            model["slope_year"] = row["slope_per_observation"] * (len(model) - 1) / elapsed_years
+        if years is None:
+            pair["global_model"] = models["OLS"]
+            pair["global_mean_model"] = models["均值标准差"]
+        else:
+            pair["models"][years] = models["OLS"]
+            pair["mean_models"][years] = models["均值标准差"]
+    return pair
+
+

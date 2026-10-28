@@ -10,10 +10,10 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from analytics import WINDOW_YEARS, build_pair_models, consensus_snapshot, slice_asof
+from analytics import Consensus, WINDOW_YEARS, build_pair_models, consensus_snapshot, slice_asof
 from data_sources import load_market_history
-from btc_gold import load_daily as load_btc_gold_daily, snapshot as btc_gold_snapshot
-from btc_gold_view import render_btc_gold_detail
+from btc_gold import load_daily as load_btc_gold_daily, build_dashboard_models as build_btc_gold_models
+from btc_gold_view import render_btc_gold_research
 
 
 CORE_WINDOW_YEARS = (3, 5, 7)
@@ -54,6 +54,15 @@ PAIR_CONFIG = {
         "denominator": "hs300",
         "positive": "中证1000相对偏强：做空IM + 做多IF",
         "negative": "中证1000相对偏弱：做多IM + 做空IF",
+    },
+    "btc_gold": {
+        "name": "BTC / 黄金",
+        "subtitle": "比特币 / 黄金 · 美元日收盘",
+        "numerator": "btc_close",
+        "denominator": "gold_close",
+        "positive": "BTC相对偏强：做空BTC + 做多黄金",
+        "negative": "BTC相对偏弱：做多BTC + 做空黄金",
+        "calendar_year": True,
     },
 }
 
@@ -411,7 +420,8 @@ def render_pair_card(pair_key, pair):
         """,
         unsafe_allow_html=True,
     )
-    st.plotly_chart(make_sparkline(models[5]), width="stretch", config={"displayModeBar": False})
+    st.plotly_chart(make_sparkline(models[5], calendar_year=config.get("calendar_year", False)),
+                    width="stretch", config={"displayModeBar": False})
     render_window_grid(models)
     decision = direction_text(pair_key, snapshot.direction)
     st.markdown(f'<div class="decision-box {tone}">{decision}</div>', unsafe_allow_html=True)
@@ -419,53 +429,6 @@ def render_pair_card(pair_key, pair):
 
 def reset_asof_date(state_key, latest_date):
     st.session_state[state_key] = latest_date
-
-
-def render_btc_gold_module():
-    st.divider()
-    st.subheader("BTC / 黄金")
-    st.caption("BTC / 美元日收盘 ÷ 黄金 / 美元日收盘 · 日线相对价格研究")
-    try:
-        daily = load_btc_gold_daily()
-        snapshots = {years: btc_gold_snapshot(daily, years) for years in CORE_WINDOW_YEARS}
-    except (OSError, ValueError, KeyError) as exc:
-        st.warning(f"BTC / 黄金数据暂不可用：{exc}")
-        return
-    latest = daily.iloc[-1]
-    change = (latest.ratio / daily.ratio.iloc[-2] - 1) * 100
-    zscores = [rows[0]["z"] for rows, _ in snapshots.values()]
-    high, low = sum(z >= 2 for z in zscores), sum(z <= -2 for z in zscores)
-    if max(high, low) >= 2:
-        signal = f"{'正向' if high > low else '负向'}偏离确认 · {max(high, low)}/3 个核心窗口"
-    else:
-        signal = "尚无同向 ±2σ 多窗口确认"
-    with st.container(border=True):
-        left, right = st.columns([1, 2], gap="large")
-        with left:
-            st.metric("当前比值", f"{latest.ratio:.5f}", f"{change:+.2f}% · 较上一共同日期", delta_color="off")
-            st.caption(f"BTC / 美元 {latest.btc_close:,.2f} · 黄金 / 美元 {latest.gold_close:,.3f}")
-            st.markdown(f"**{signal}**")
-            st.caption(f"{daily.index[0]:%Y-%m-%d} 至 {daily.index[-1]:%Y-%m-%d} · {len(daily):,} 条共同日线")
-            st.caption(f"MT5 导出快照；当前截至 {daily.index[-1]:%Y-%m-%d}，非实时行情。")
-            if st.button("打开 BTC / 黄金完整分析 →", key="detail_btc_gold"):
-                st.session_state.page = "btc_gold"
-                st.rerun()
-        with right:
-            st.plotly_chart(make_sparkline(snapshots[5][1]["OLS"], calendar_year=True),
-                            width="stretch", config={"displayModeBar": False}, key="btc_gold_sparkline")
-            cells = []
-            for years, (rows, _) in snapshots.items():
-                ols_z, mean_z = rows[0]["z"], rows[1]["z"]
-                _, level = signal_class(ols_z)
-                tone = "positive" if ols_z > 0 else "negative" if ols_z < 0 else ""
-                cells.append(
-                    f'<div class="window-cell {level} {tone}">'
-                    f'<div class="window-label">{years} 年 · OLS</div>'
-                    f'<div class="window-z">{ols_z:+.2f}σ</div>'
-                    f'<div class="window-meta">均值法 {mean_z:+.2f}σ</div></div>'
-                )
-            st.markdown(f'<div class="window-grid">{"".join(cells)}</div>', unsafe_allow_html=True)
-            st.caption("近一年比值 · 5 年 OLS 中枢与 ±2σ 通道；窗口按实际日历年截取。")
 
 
 def toggle_visible_window(state_key, years):
@@ -480,6 +443,7 @@ def toggle_visible_window(state_key, years):
 
 def render_detail(pair_key, df):
     config = PAIR_CONFIG[pair_key]
+    calendar_year = config.get("calendar_year", False)
     if st.button("← 返回首页", key=f"back_{pair_key}"):
         st.session_state.page = "home"
         st.rerun()
@@ -492,22 +456,25 @@ def render_detail(pair_key, df):
 
     pair_history = df[[config["numerator"], config["denominator"]]].dropna()
     latest_date = pair_history.index[-1].date()
-    earliest_date = pair_history.index[7 * 252 - 1].date()
+    earliest_date = pair_history.index[0 if calendar_year else 7 * 252 - 1].date()
     date_key = f"asof_date_{pair_key}"
     stored_date = st.session_state.get(date_key)
     if stored_date is None or stored_date < earliest_date or stored_date > latest_date:
         st.session_state[date_key] = latest_date
     requested_date = st.session_state[date_key]
     asof_df, actual_date = slice_asof(pair_history, requested_date)
-    pair = build_pair_models(asof_df, config["numerator"], config["denominator"])
+    pair = (build_btc_gold_models(asof_df) if calendar_year
+            else build_pair_models(asof_df, config["numerator"], config["denominator"]))
     base = pair["base"]
     models = pair["models"]
     mean_models = pair["mean_models"]
     global_model = pair["global_model"]
     global_mean_model = pair["global_mean_model"]
-    snapshot = consensus_snapshot({years: models[years] for years in CORE_WINDOW_YEARS})
+    core_models = {years: models[years] for years in CORE_WINDOW_YEARS if years in models}
+    snapshot = (consensus_snapshot(core_models) if len(core_models) == 3
+                else Consensus(0, 0, 0, "核心窗口历史不足"))
     visible_key = f"visible_windows_{pair_key}"
-    available_options = [*models.keys(), GLOBAL_WINDOW]
+    available_options = [*models.keys()] + ([GLOBAL_WINDOW] if global_model is not None else [])
     if visible_key not in st.session_state:
         st.session_state[visible_key] = [
             years for years in DEFAULT_VISIBLE_YEARS if years in models
@@ -517,9 +484,9 @@ def render_detail(pair_key, df):
         if option in st.session_state[visible_key] and option in available_options
     ]
     if not selected_windows:
-        selected_windows = [
-            years for years in DEFAULT_VISIBLE_YEARS if years in models
-        ]
+        selected_windows = [years for years in DEFAULT_VISIBLE_YEARS if years in models]
+        if not selected_windows and global_model is not None:
+            selected_windows = [GLOBAL_WINDOW]
     if selected_windows != st.session_state[visible_key]:
         st.session_state[visible_key] = selected_windows
 
@@ -552,14 +519,18 @@ def render_detail(pair_key, df):
                 args=(visible_key, option),
             )
     adjusted = pd.Timestamp(requested_date).date() != actual_date.date()
+    date_kind = "共同报价日" if calendar_year else "交易日"
     status_text = (
-        f"{requested_date:%Y-%m-%d}不是交易日，已自动使用此前最近的交易日 "
+        f"{requested_date:%Y-%m-%d}不是{date_kind}，已自动使用此前最近的{date_kind} "
         f"<strong>{actual_date:%Y-%m-%d}</strong>"
         if adjusted
         else f"所有计算仅使用 <strong>{actual_date:%Y-%m-%d}</strong> 及以前的数据"
     )
-    global_years = len(base) / 252
-    status_text += f"；全局窗口使用全部 {len(base):,} 个交易日（约{global_years:.1f}年）"
+    global_years = ((base.index[-1] - base.index[0]).days / 365.2425 if calendar_year else len(base) / 252)
+    sample_unit = "条共同日线" if calendar_year else "个交易日"
+    status_text += f"；全局窗口使用全部 {len(base):,} {sample_unit}（约{global_years:.1f}年）"
+    if calendar_year:
+        status_text += f"；MT5 导出快照截至 {latest_date:%Y-%m-%d}，非实时更新"
     st.markdown(f'<div class="asof-note">{status_text}</div>', unsafe_allow_html=True)
 
     latest_ratio = float(base.iloc[-1]["ratio"])
@@ -603,11 +574,12 @@ def render_detail(pair_key, df):
         ols_latest = ols_model.iloc[-1]
         mean_latest = mean_model.iloc[-1]
         section_title = "全局窗口" if is_global else f"{option}年固定窗口"
-        sample_kind = "全部可用数据" if is_global else f"{option * 252:,}日固定样本"
+        sample_kind = ("全部可用数据" if is_global else
+                       f"{option}个日历年固定样本" if calendar_year else f"{option * 252:,}日固定样本")
         st.markdown(
             f'<div class="fixed-section"><div class="fixed-title">{section_title}</div>'
             f'<div class="fixed-meta">共同样本 {ols_model.index[0]:%Y-%m-%d} 至 {ols_model.index[-1]:%Y-%m-%d}'
-            f'｜{len(ols_model):,}个交易日｜{sample_kind}｜左右图使用相同纵轴</div></div>',
+            f'｜{len(ols_model):,}{sample_unit}｜{sample_kind}｜左右图使用相同纵轴</div></div>',
             unsafe_allow_html=True,
         )
         y_range = comparison_y_range(ols_model, mean_model)
@@ -656,9 +628,11 @@ def render_detail(pair_key, df):
         if position < len(selected_windows) - 1:
             st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
+    if len(base) < 3:
+        st.info("当前观察日不足 3 条日线，暂不计算统计通道。")
+
     with st.expander("计算口径与使用说明"):
-        st.markdown(
-            """
+        method_note = """
             <div class="method-note">
             <p><strong>观察日期切片：</strong>先删除观察日期之后的全部行情，再从剩余数据末端截取所选固定窗口。
             因此历史观察日的中枢、标准差和Z值不会受到未来行情影响；节假日自动回退至此前最近交易日。</p>
@@ -677,9 +651,15 @@ def render_detail(pair_key, df):
             <p><strong>重要限制：</strong>图中旧日期的Z使用了整个固定区间拟合出的趋势线，因此只能帮助理解当前样本结构，
             不能当作旧日期当时已经知道的交易信号。若以后做严格历史回测，仍需另用逐日滚动、且不偷看未来数据的版本。</p>
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
+            """
+        if calendar_year:
+            method_note = method_note.replace("可选择1、3、5、7、10、15和20年；每个窗口截取最近\n            <code>年数 × 252</code>个交易日", "可选择1、3、5、7年；每个窗口按实际日历年截取共同日线")
+            method_note = method_note.replace("节假日自动回退至此前最近交易日", "无共同报价时自动回退至此前最近共同日期")
+            method_note = method_note.replace("同一批交易日", "同一批共同日线")
+            method_note = method_note.replace("</div>", "<p><strong>美元双腿：</strong>BTCUSDm日收盘 ÷ XAUUSDm日收盘；保留周日，不补值。OLS仍按观测序号拟合；展示的年化斜率按样本实际跨度换算，不使用252日。不同品种的日线标签不能保证报价时刻完全同步。</p></div>")
+        st.markdown(method_note, unsafe_allow_html=True)
+    if calendar_year:
+        render_btc_gold_research(df)
 
 
 def load_all_models():
@@ -697,7 +677,7 @@ def load_all_models():
         is_realtime = True
     pairs = {
         key: build_pair_models(df, config["numerator"], config["denominator"])
-        for key, config in PAIR_CONFIG.items()
+        for key, config in PAIR_CONFIG.items() if not config.get("calendar_year", False)
     }
     return df, pairs, is_realtime, data_metadata
 
@@ -743,16 +723,21 @@ if st.session_state.page == "home":
                 st.session_state.pop(key, None)
             st.rerun()
 
-    columns = st.columns(3, gap="medium")
-    for column, (pair_key, pair) in zip(columns, pairs.items()):
-        with column:
-            with st.container(border=True, key=f"pair_card_{pair_key}"):
-                render_pair_card(pair_key, pair)
-                if st.button(f"打开 {PAIR_CONFIG[pair_key]['name']} 详情", key=f"detail_{pair_key}"):
-                    st.session_state.page = pair_key
-                    st.rerun()
-    render_btc_gold_module()
-elif st.session_state.page == "btc_gold":
-    render_btc_gold_detail()
+    home_pairs = dict(pairs)
+    try:
+        home_pairs["btc_gold"] = build_btc_gold_models(load_btc_gold_daily())
+    except (OSError, ValueError, KeyError) as exc:
+        st.warning(f"BTC / 黄金数据暂不可用：{exc}")
+    card_items = list(home_pairs.items())
+    for row_start in range(0, len(card_items), 3):
+        columns = st.columns(3, gap="medium")
+        for column, (pair_key, pair) in zip(columns, card_items[row_start:row_start + 3]):
+            with column:
+                with st.container(border=True, key=f"pair_card_{pair_key}"):
+                    render_pair_card(pair_key, pair)
+                    if st.button(f"打开 {PAIR_CONFIG[pair_key]['name']} 详情", key=f"detail_{pair_key}"):
+                        st.session_state.page = pair_key
+                        st.rerun()
 else:
-    render_detail(st.session_state.page, df)
+    detail_data = load_btc_gold_daily() if st.session_state.page == "btc_gold" else df
+    render_detail(st.session_state.page, detail_data)
