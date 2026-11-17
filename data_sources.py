@@ -1,12 +1,13 @@
-"""Market-data loading with iFinD as primary and AKShare as fallback."""
+"""Market-data loading with iFinD, CSI and dated Sina daily bars."""
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
+from math import isfinite
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import akshare as ak
 import pandas as pd
 import requests
 
@@ -17,11 +18,8 @@ IFIND_CODES = {
     "000905.SH": "zz500",
     "000852.SH": "zz1000",
 }
-AKSHARE_SYMBOLS = {
-    "sh000300": "hs300",
-    "sh000905": "zz500",
-    "sh000852": "zz1000",
-}
+CSI_HISTORY_URL = "https://www.csindex.com.cn/csindex-home/perf/index-perf"
+SINA_DAILY_URL = "https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData"
 IFIND_TOKEN_URL = "https://quantapi.51ifind.com/api/v1/get_access_token"
 IFIND_HISTORY_URL = "https://quantapi.51ifind.com/api/v1/cmd_history_quotation"
 DEFAULT_HISTORY_PATH = Path(__file__).resolve().parent / "data" / "index_history.csv"
@@ -43,7 +41,7 @@ def _normalise_frame(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_embedded_history(path: str | Path = DEFAULT_HISTORY_PATH) -> pd.DataFrame:
-    """Load the audited iFinD Excel history bundled with the dashboard."""
+    """Load the bundled history of verified index closes."""
 
     frame = pd.read_csv(path, parse_dates=["date"]).set_index("date")
     return _normalise_frame(frame)
@@ -110,24 +108,80 @@ def fetch_ifind_history(
     return _normalise_frame(frame)
 
 
-def fetch_akshare_history() -> pd.DataFrame:
-    """Fetch AKShare daily closes for validation and temporary gap filling."""
+def fetch_public_index(item, start, end, session=requests):
+    code, column = item
+    symbol = code.split(".")[0]
+    closes = pd.Series(dtype=float, name=column, index=pd.DatetimeIndex([]))
 
-    series = []
-    for symbol, column in AKSHARE_SYMBOLS.items():
-        item = ak.stock_zh_index_daily(symbol=symbol)
-        item["date"] = pd.to_datetime(item["date"])
-        item = item.set_index("date")[["close"]].rename(columns={"close": column})
-        series.append(item)
-    return _normalise_frame(pd.concat(series, axis=1))
+    def dated_closes(rows, date_field):
+        dates = pd.to_datetime(rows[date_field].astype(str), errors="coerce").dt.normalize()
+        values = pd.to_numeric(rows["close"], errors="coerce")
+        result = pd.Series(values.to_numpy(), index=dates, name=column).dropna()
+        result = result.loc[(result.index >= start) & (result.index <= end)]
+        result = result[(result > 0) & result.map(isfinite)]
+        return result[~result.index.duplicated(keep="last")].sort_index()
+
+    try:
+        response = session.get(CSI_HISTORY_URL, params={
+            "indexCode": symbol, "startDate": start.strftime("%Y%m%d"), "endDate": end.strftime("%Y%m%d")
+        }, timeout=(18, 15))
+        response.raise_for_status()
+        rows = pd.DataFrame(response.json()["data"])
+        closes = dated_closes(rows.loc[rows["indexCode"].eq(symbol)], "tradeDate")
+    except (requests.RequestException, KeyError, TypeError, ValueError):
+        pass
+
+    # CSI publishes closing levels. Sina also serves dated bars during the session.
+    if closes.empty or closes.index.max() < end:
+        try:
+            response = session.get(SINA_DAILY_URL, params={
+                "symbol": "sh" + symbol, "scale": 240, "ma": "no",
+                "datalen": (end - start).days + 1,
+            }, timeout=(18, 15))
+            response.raise_for_status()
+            sina = dated_closes(pd.DataFrame(response.json()), "day")
+            closes = closes.combine_first(sina)
+        except (requests.RequestException, KeyError, TypeError, ValueError):
+            pass
+    return closes.rename(column)
+
+
+def fetch_dated_quotes(today, session=requests):
+    """Return the last trade time and current/previous index levels from Tencent."""
+    if today.weekday() >= 5:
+        return None
+    symbols = {"sh" + code.split(".")[0]: column for code, column in IFIND_CODES.items()}
+    try:
+        response = session.get("https://qt.gtimg.cn/q=" + ",".join(symbols), timeout=(18, 10))
+        response.raise_for_status()
+        records = {}
+        for line in response.content.decode("gbk").splitlines():
+            name, _, payload = line.partition("=")
+            symbol = name.removeprefix("v_")
+            if symbol not in symbols:
+                continue
+            fields = payload.strip().strip('";').split("~")
+            if fields[2] != symbol[2:]:
+                continue
+            timestamp = pd.to_datetime(fields[30], format="%Y%m%d%H%M%S")
+            price, previous = float(fields[3]), float(fields[4])
+            if timestamp.date() != today or timestamp.strftime("%H:%M") < "09:25":
+                continue
+            if all(isfinite(level) and level > 0 for level in (price, previous)):
+                records[symbols[symbol]] = (price, previous, timestamp)
+        if len(records) == len(symbols):
+            return pd.DataFrame.from_dict(records, orient="index", columns=["price", "previous", "time"])
+    except (requests.RequestException, UnicodeError, ValueError, IndexError):
+        pass
+    return None
 
 
 def merge_market_history(
     embedded: pd.DataFrame,
     ifind: pd.DataFrame | None,
-    akshare: pd.DataFrame | None,
+    public_history: pd.DataFrame | None,
 ) -> tuple[pd.DataFrame, dict]:
-    """Merge sources without allowing AKShare to overwrite official iFinD values."""
+    """Merge sources without overwriting iFinD or bundled closes with public fallback values."""
 
     embedded = _normalise_frame(embedded)
     combined = embedded.copy()
@@ -140,16 +194,16 @@ def merge_market_history(
     fallback_cells = 0
     fallback_dates = 0
     max_difference_bp = None
-    if akshare is not None and not akshare.empty:
-        fallback = _normalise_frame(akshare)
+    if public_history is not None and not public_history.empty:
+        fallback = _normalise_frame(public_history)
         qa_start = combined.index.max() - pd.Timedelta(days=90)
         overlap = combined.loc[qa_start:].join(
-            fallback.loc[qa_start:], how="inner", lsuffix="_official", rsuffix="_ak"
+            fallback.loc[qa_start:], how="inner", lsuffix="_official", rsuffix="_public"
         )
         differences = []
         for column in INDEX_COLUMNS:
             official_values = overlap[f"{column}_official"]
-            fallback_values = overlap[f"{column}_ak"]
+            fallback_values = overlap[f"{column}_public"]
             valid = official_values.notna() & fallback_values.notna() & fallback_values.ne(0)
             if valid.any():
                 relative_bp = (
@@ -185,17 +239,15 @@ def load_market_history(
     today: date | None = None,
     history_path: str | Path = DEFAULT_HISTORY_PATH,
 ) -> tuple[pd.DataFrame, dict]:
-    """Load audited history, then append iFinD closes and AKShare fallbacks."""
+    """Load audited history, then append iFinD closes and independently dated public quotes."""
 
     embedded = load_embedded_history(history_path)
     today = today or pd.Timestamp.now(tz=ZoneInfo("Asia/Shanghai")).date()
     start = max(embedded.index[-1] - pd.Timedelta(days=30), pd.Timestamp("2021-08-05"))
     end = pd.Timestamp(today)
     ifind = None
-    akshare = None
     token_expiry = None
     ifind_error = None
-    akshare_error = None
 
     try:
         token = access_token
@@ -206,17 +258,19 @@ def load_market_history(
     except Exception as exc:  # keep the dashboard available on upstream outages
         ifind_error = str(exc)
 
-    try:
-        akshare = fetch_akshare_history()
-    except Exception as exc:  # the embedded official history still remains usable
-        akshare_error = str(exc)
+    with ThreadPoolExecutor(max_workers=len(IFIND_CODES)) as pool:
+        requests_by_index = [
+            pool.submit(fetch_public_index, item, start, end) for item in IFIND_CODES.items()
+        ]
+        public_history = pd.concat([job.result() for job in requests_by_index], axis=1)
 
-    combined, metadata = merge_market_history(embedded, ifind, akshare)
+    combined, metadata = merge_market_history(embedded.loc[:end], ifind, public_history)
+    combined = combined.loc[:end]
+    metadata["latest_date"] = combined.index.max()
     metadata.update(
         {
             "ifind_configured": bool(refresh_token or access_token),
             "ifind_error": ifind_error,
-            "akshare_error": akshare_error,
             "token_expiry": token_expiry,
             "embedded_latest_date": embedded.index[-1],
         }

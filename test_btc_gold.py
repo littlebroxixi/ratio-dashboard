@@ -10,7 +10,7 @@ from streamlit.testing.v1 import AppTest
 from streamlit.runtime.pages_manager import PagesManager
 
 import btc_gold
-from test_app_smoke import fake_daily, fake_spot
+from data_sources import load_embedded_history
 
 
 class BtcGoldTest(unittest.TestCase):
@@ -50,7 +50,9 @@ class BtcGoldTest(unittest.TestCase):
     @patch.object(PagesManager, "uses_pages_directory", False)
     def test_detail_history_and_shared_layout(self):
         path = Path(__file__).parent / "streamlit_app.py"
-        with patch("akshare.stock_zh_index_daily", fake_daily), patch("akshare.stock_zh_index_spot_sina", fake_spot):
+        with patch("data_sources.fetch_dated_quotes", return_value=None), patch(
+            "data_sources.load_market_history", return_value=(load_embedded_history(), {})
+        ):
             app = AppTest.from_file(str(path)).run(timeout=30)
             self.assertEqual(len(app.exception), 0)
             app.button(key="detail_btc_gold").click().run(timeout=30)

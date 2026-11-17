@@ -169,8 +169,8 @@ def build_pair_models(
         "base": base,
         "models": models,
         "mean_models": mean_models,
-        "global_model": global_ols_signal(base),
-        "global_mean_model": global_mean_signal(base),
+        "global_model": global_ols_signal(base) if len(base) >= 3 else None,
+        "global_mean_model": global_mean_signal(base) if len(base) >= 3 else None,
     }
 
 

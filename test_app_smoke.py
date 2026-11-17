@@ -1,41 +1,21 @@
 import unittest
 from datetime import date
 
-import akshare as ak
-import numpy as np
+from unittest.mock import patch
+
+from data_sources import load_embedded_history
+from streamlit import cache_data
 import pandas as pd
 from streamlit.testing.v1 import AppTest
 
 
-def fake_daily(symbol):
-    dates = pd.bdate_range("2016-01-01", periods=2100)
-    x = np.arange(len(dates), dtype=float)
-    base = {
-        "sh000300": 3500.0,
-        "sh000905": 5200.0,
-        "sh000852": 6100.0,
-    }[symbol]
-    slope = {"sh000300": 0.5, "sh000905": 0.65, "sh000852": 0.55}[symbol]
-    close = base + slope * x + 80.0 * np.sin(x / 45.0)
-    return pd.DataFrame({"date": dates, "close": close})
-
-
-def fake_spot():
-    return pd.DataFrame(
-        {
-            "代码": ["sh000300", "sh000905", "sh000852"],
-            "最新价": [4550.0, 6500.0, 7200.0],
-        }
-    )
-
-
+@patch("data_sources.fetch_dated_quotes", return_value=None)
 class DashboardSmokeTest(unittest.TestCase):
-    def test_home_page_renders_with_synthetic_market_data(self):
-        original_daily = ak.stock_zh_index_daily
-        original_spot = ak.stock_zh_index_spot_sina
-        ak.stock_zh_index_daily = fake_daily
-        ak.stock_zh_index_spot_sina = fake_spot
-        try:
+    def setUp(self):
+        cache_data.clear()
+
+    def test_home_page_renders_with_bundled_market_data(self, _quotes):
+        with patch("data_sources.load_market_history", return_value=(load_embedded_history(), {})):
             app = AppTest.from_file("streamlit_app.py")
             app.run(timeout=30)
             self.assertEqual(len(app.exception), 0)
@@ -87,9 +67,35 @@ class DashboardSmokeTest(unittest.TestCase):
             self.assertEqual(len(app.get("plotly_chart")), 8)
             global_text = " ".join(item.value for item in app.markdown)
             self.assertIn("全局窗口", global_text)
-        finally:
-            ak.stock_zh_index_daily = original_daily
-            ak.stock_zh_index_spot_sina = original_spot
+
+    def test_im_ic_date_selection_and_refresh(self, _quotes):
+        history = load_embedded_history()
+        initial = history.loc[:"2026-08-05"]
+        refreshed = history.loc[:"2026-11-16"].copy()
+        refreshed.loc["2026-11-16", "zz1000"] = float("nan")
+        today = pd.Timestamp.now(tz="Asia/Shanghai").date()
+        with patch("data_sources.load_market_history", side_effect=[
+            (initial, {}), (refreshed, {}), (initial, {}), (initial, {})
+        ]) as fetch:
+            app = AppTest.from_file("streamlit_app.py").run(timeout=30)
+            app.button(key="detail_im_ic").click().run()
+            self.assertEqual(app.date_input[0].value, date(2026, 8, 5))
+            self.assertEqual(app.date_input[0].max, today)
+            app.button(key="latest_im_ic").click().run()
+            self.assertEqual(fetch.call_count, 2)
+            self.assertEqual(app.date_input[0].value, date(2026, 11, 13))
+            app.date_input[0].set_value(date(2026, 11, 16)).run()
+            self.assertEqual(app.date_input[0].value, date(2026, 11, 16))
+            self.assertIn("可用共同报价仅到 <strong>2026-11-13", " ".join(i.value for i in app.markdown))
+            app.date_input[0].set_value(date(2026, 9, 2)).run()
+            self.assertEqual(fetch.call_count, 3)
+            self.assertIn("本页已切片到 2026-09-02", " ".join(i.value for i in app.markdown))
+            app.date_input[0].set_value(app.date_input[0].min).run()
+            self.assertTrue(any("不足 3 条" in item.value for item in app.info))
+            app.button(key="latest_im_ic").click().run()
+            self.assertEqual(app.date_input[0].value, date(2026, 11, 13))
+            self.assertEqual(len(app.get("plotly_chart")), 8)
+            self.assertEqual(len(app.exception), 0)
 
 
 if __name__ == "__main__":

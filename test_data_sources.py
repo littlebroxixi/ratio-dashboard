@@ -1,10 +1,14 @@
 import unittest
+from datetime import date
 from pathlib import Path
+from unittest.mock import Mock
 
 import pandas as pd
 
 from data_sources import (
     exchange_ifind_access_token,
+    fetch_dated_quotes,
+    fetch_public_index,
     fetch_ifind_history,
     load_embedded_history,
     merge_market_history,
@@ -38,11 +42,44 @@ class MarketDataTests(unittest.TestCase):
         frame = load_embedded_history(path)
 
         self.assertEqual(frame.index.min(), pd.Timestamp("2002-01-04"))
-        self.assertEqual(frame.index.max(), pd.Timestamp("2026-08-05"))
-        self.assertEqual(frame["zz1000"].notna().sum(), 5244)
-        self.assertEqual(frame["zz500"].notna().sum(), 5244)
+        self.assertGreaterEqual(frame.index.max(), pd.Timestamp("2026-11-16"))
+        self.assertEqual(frame.loc["2026-11-16"].tolist(), [3979.80, 6297.18, 6164.62])
+        self.assertEqual(frame.loc[:"2026-08-05", "zz1000"].notna().sum(), 5244)
+        self.assertEqual(frame.loc[:"2026-08-05", "zz500"].notna().sum(), 5244)
         for invalid in ("2014-11-15", "2018-06-18", "2020-05-05", "2020-10-08"):
             self.assertNotIn(pd.Timestamp(invalid), frame.index)
+
+    def test_public_history_prefers_csi_and_only_uses_dated_sina_gaps(self):
+        session = Mock()
+        session.get.side_effect = [
+            FakeResponse({"data": [
+                {"indexCode": "000905", "tradeDate": "20261113", "close": 6465.49},
+                {"indexCode": "000852", "tradeDate": "20261116", "close": 6000},
+            ]}),
+            FakeResponse([
+                {"day": "2026-11-13", "close": 6001}, {"day": "2026-11-16", "close": 6297.18},
+                {"day": "2026-11-17", "close": 6300}, {"day": "invalid", "close": 9999}
+            ])
+        ]
+        result = fetch_public_index(("000905.SH", "zz500"), pd.Timestamp("2026-11-13"),
+                                    pd.Timestamp("2026-11-16"), session)
+        self.assertEqual(result.tolist(), [6465.49, 6297.18])
+        self.assertEqual(result.index.max(), pd.Timestamp("2026-11-16"))
+
+    def test_spot_requires_a_matching_trade_date_for_every_index(self):
+        session = Mock()
+        lines = []
+        for code in ("000300", "000905", "000852"):
+            fields = [""] * 31
+            fields[2:5] = [code, "6100", "6000"]
+            fields[30] = "20261117103000"
+            lines.append(f'v_sh{code}="' + "~".join(fields) + '";')
+        session.get.return_value.content = "\n".join(lines).encode()
+        self.assertIsNotNone(fetch_dated_quotes(date(2026, 11, 17), session))
+        self.assertIsNone(fetch_dated_quotes(date(2026, 11, 18), session))
+        lines[-1] = lines[-1].replace("20261117", "20261116")
+        session.get.return_value.content = "\n".join(lines).encode()
+        self.assertIsNone(fetch_dated_quotes(date(2026, 11, 17), session))
 
     def test_refresh_exchange_sends_content_length_body(self):
         session = FakeSession(

@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from time import monotonic
 
-import akshare as ak
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
 from analytics import Consensus, WINDOW_YEARS, build_pair_models, consensus_snapshot, slice_asof
-from data_sources import load_market_history
+from data_sources import fetch_dated_quotes, load_market_history
 from btc_gold import load_daily as load_btc_gold_daily, build_dashboard_models as build_btc_gold_models
 
 
@@ -72,7 +71,7 @@ st.markdown(
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
 .stApp { background: #fbfbf8; color: #303431; }
-#MainMenu, footer, header { visibility: hidden; }
+#MainMenu, [data-testid="stFooter"], [data-testid="stHeader"] { visibility: hidden; }
 .block-container { padding: 1.65rem 2.5rem 1.2rem; max-width: 1600px; }
 
 .topbar {
@@ -227,19 +226,6 @@ st.markdown(
 )
 
 
-@st.cache_data(ttl=60)
-def get_realtime_quotes():
-    if datetime.now().weekday() >= 5:
-        return None
-    try:
-        spot = ak.stock_zh_index_spot_sina()
-        target = spot[spot["代码"].isin(["sh000300", "sh000905", "sh000852"])]
-        mapping = {"sh000300": "hs300", "sh000905": "zz500", "sh000852": "zz1000"}
-        return {mapping[row["代码"]]: float(row["最新价"]) for _, row in target.iterrows()}
-    except Exception:
-        return None
-
-
 def read_secret(name):
     value = os.getenv(name)
     if value:
@@ -251,11 +237,17 @@ def read_secret(name):
 
 
 @st.cache_data(ttl=3600)
-def load_data():
+def load_data(today):
     return load_market_history(
+        today=today,
         refresh_token=read_secret("IFIND_REFRESH_TOKEN"),
         access_token=read_secret("IFIND_ACCESS_TOKEN"),
     )
+
+
+@st.cache_data(ttl=60)
+def load_quotes(today):
+    return fetch_dated_quotes(today)
 
 
 def signal_class(zscore):
@@ -426,12 +418,24 @@ def render_pair_card(pair_key, pair):
     st.markdown(f'<div class="decision-box {tone}">{decision}</div>', unsafe_allow_html=True)
 
 
-def reset_asof_date(state_key, latest_date):
-    st.session_state[state_key] = latest_date
+def request_refresh():
+    st.session_state["_refresh_market"] = True
 
 
-def toggle_visible_window(state_key, years):
-    selected = set(st.session_state.get(state_key, DEFAULT_VISIBLE_YEARS))
+def request_latest(pair_key):
+    st.session_state["_latest_pair"] = pair_key
+    if not PAIR_CONFIG[pair_key].get("calendar_year"):
+        request_refresh()
+
+
+def refresh_if_beyond_history(date_key, latest_date):
+    selected = st.session_state.get(date_key)
+    if selected is not None and selected > latest_date:
+        request_refresh()
+
+
+def toggle_visible_window(state_key, years, visible_windows):
+    selected = set(visible_windows)
     if years in selected:
         if len(selected) > 1:
             selected.remove(years)
@@ -455,10 +459,12 @@ def render_detail(pair_key, df):
 
     pair_history = df[[config["numerator"], config["denominator"]]].dropna()
     latest_date = pair_history.index[-1].date()
-    earliest_date = pair_history.index[0 if calendar_year else 7 * 252 - 1].date()
+    earliest_date = pair_history.index[0].date()
+    last_selectable = pd.Timestamp.now(tz="Asia/Shanghai").date()
     date_key = f"asof_date_{pair_key}"
     stored_date = st.session_state.get(date_key)
-    if stored_date is None or stored_date < earliest_date or stored_date > latest_date:
+    returned_to_latest = st.session_state.pop("_latest_pair", None) == pair_key
+    if returned_to_latest or stored_date is None or not earliest_date <= stored_date <= last_selectable:
         st.session_state[date_key] = latest_date
     requested_date = st.session_state[date_key]
     asof_df, actual_date = slice_asof(pair_history, requested_date)
@@ -486,8 +492,6 @@ def render_detail(pair_key, df):
         selected_windows = [years for years in DEFAULT_VISIBLE_YEARS if years in models]
         if not selected_windows and global_model is not None:
             selected_windows = [GLOBAL_WINDOW]
-    if selected_windows != st.session_state[visible_key]:
-        st.session_state[visible_key] = selected_windows
 
     date_col, reset_col, *window_cols = st.columns(
         [2.6, 1.05, *([.82] * len(available_options))], vertical_alignment="bottom"
@@ -496,16 +500,18 @@ def render_detail(pair_key, df):
         st.button(
             "回到最新",
             key=f"latest_{pair_key}",
-            on_click=reset_asof_date,
-            args=(date_key, latest_date),
+            on_click=request_latest,
+            args=(pair_key,),
         )
     with date_col:
         st.date_input(
             "观察日期（截至日）",
             min_value=earliest_date,
-            max_value=latest_date,
+            max_value=last_selectable,
             key=date_key,
             format="YYYY-MM-DD",
+            on_change=None if calendar_year else refresh_if_beyond_history,
+            args=(date_key, latest_date),
         )
     for column, option in zip(window_cols, available_options):
         label = "全局" if option == GLOBAL_WINDOW else f"{option}年"
@@ -515,16 +521,22 @@ def render_detail(pair_key, df):
                 key=f"window_toggle_{pair_key}_{option}",
                 type="primary" if option in selected_windows else "secondary",
                 on_click=toggle_visible_window,
-                args=(visible_key, option),
+                args=(visible_key, option, selected_windows),
             )
-    adjusted = pd.Timestamp(requested_date).date() != actual_date.date()
-    date_kind = "共同报价日" if calendar_year else "交易日"
-    status_text = (
-        f"{requested_date:%Y-%m-%d}不是{date_kind}，已自动使用此前最近的{date_kind} "
-        f"<strong>{actual_date:%Y-%m-%d}</strong>"
-        if adjusted
-        else f"所有计算仅使用 <strong>{actual_date:%Y-%m-%d}</strong> 及以前的数据"
-    )
+    if requested_date > latest_date:
+        status_text = (f"选定 {requested_date:%Y-%m-%d}，可用共同报价仅到 "
+                       f"<strong>{latest_date:%Y-%m-%d}</strong>，图表使用该日数据")
+    elif requested_date != actual_date.date():
+        status_text = (f"{requested_date:%Y-%m-%d} 没有共同报价，图表使用此前最近的 "
+                       f"<strong>{actual_date:%Y-%m-%d}</strong>")
+    elif returned_to_latest:
+        action = "已回到快照" if calendar_year else "已重新查询行情"
+        status_text = f"{action}，最近共同报价为 <strong>{latest_date:%Y-%m-%d}</strong>"
+    else:
+        status_text = f"所有计算仅使用 <strong>{actual_date:%Y-%m-%d}</strong> 及以前的数据"
+    quote_time = st.session_state.get("_quote_time")
+    if not calendar_year and quote_time is not None and actual_date.date() == quote_time.date():
+        status_text += f"，行情报价时间 {quote_time:%H:%M:%S}"
     global_years = ((base.index[-1] - base.index[0]).days / 365.2425 if calendar_year else len(base) / 252)
     sample_unit = "条共同日线" if calendar_year else "个交易日"
     status_text += f"；全局窗口使用全部 {len(base):,} {sample_unit}（约{global_years:.1f}年）"
@@ -558,13 +570,14 @@ def render_detail(pair_key, df):
     selected_labels = [
         "全局" if option == GLOBAL_WINDOW else f"{option}年" for option in selected_windows
     ]
-    st.markdown(
-        f'<div class="fixed-intro">本页已切片到 {actual_date:%Y-%m-%d}，之后的数据完全不参与计算。'
-        f'当前展示 {"、".join(selected_labels)} 窗口。'
-        '每个时间窗口左右使用完全相同的样本和纵轴尺度。左侧用OLS直线作为中枢，'
-        '波动取OLS残差标准差；右侧用固定算术平均值作为中枢，波动取比值本身的普通样本标准差。</div>',
-        unsafe_allow_html=True,
-    )
+    if selected_labels:
+        st.markdown(
+            f'<div class="fixed-intro">本页已切片到 {actual_date:%Y-%m-%d}，之后的数据完全不参与计算。'
+            f'当前展示 {"、".join(selected_labels)} 窗口。'
+            '每个时间窗口左右使用完全相同的样本和纵轴尺度。左侧用OLS直线作为中枢，'
+            '波动取OLS残差标准差；右侧用固定算术平均值作为中枢，波动取比值本身的普通样本标准差。</div>',
+            unsafe_allow_html=True,
+        )
 
     for position, option in enumerate(selected_windows):
         is_global = option == GLOBAL_WINDOW
@@ -659,45 +672,60 @@ def render_detail(pair_key, df):
         st.markdown(method_note, unsafe_allow_html=True)
 
 
-def load_all_models():
-    df, data_metadata = load_data()
-    realtime = get_realtime_quotes()
-    is_realtime = False
-    if realtime and len(realtime) == 3:
-        today = pd.Timestamp(datetime.now().date())
-        row = {"hs300": realtime["hs300"], "zz500": realtime["zz500"], "zz1000": realtime["zz1000"]}
-        if today not in df.index:
-            df = pd.concat([df, pd.DataFrame(row, index=[today])])
-        else:
-            df.loc[today] = row
-        df = df.sort_index()
-        is_realtime = True
+def load_all_models(today, previous_history, previous_quotes):
+    history, _ = load_data(today)
+    if previous_history is not None:
+        history = history.combine_first(previous_history)
+    df = history
+    quotes = load_quotes(today)
+    if quotes is None and previous_quotes is not None and previous_quotes.time.min().date() == today:
+        quotes = previous_quotes
+    quote_time = None
+    if quotes is not None:
+        day = pd.Timestamp(today)
+        prior = history.loc[history.index < day].dropna()
+        # Match the provider's previous close before joining a live bar across a gap.
+        if not prior.empty and (prior.iloc[-1] - quotes.previous).abs().le(0.02).all():
+            live = quotes.price.to_frame().T.set_axis([day])
+            if day not in history.index or history.loc[day].isna().any():
+                df = history.combine_first(live)
+                quote_time = quotes.time.min()
     pairs = {
         key: build_pair_models(df, config["numerator"], config["denominator"])
         for key, config in PAIR_CONFIG.items() if not config.get("calendar_year", False)
     }
-    return df, pairs, is_realtime, data_metadata
+    return df, pairs, history, quotes, quote_time
 
 
 if "page" not in st.session_state:
     st.session_state.page = "home"
-if "_pairs" not in st.session_state:
+today = pd.Timestamp.now(tz="Asia/Shanghai").date()
+force_refresh = st.session_state.pop("_refresh_market", False)
+refresh_due = monotonic() - st.session_state.get("_loaded_at", 0) >= 3600
+if force_refresh or "_pairs" not in st.session_state or st.session_state.get("_market_day") != today or refresh_due:
     try:
-        with st.spinner("加载行情并计算3 / 5 / 7年固定窗口..."):
-            df, pairs, is_realtime, data_metadata = load_all_models()
+        with st.spinner("正在获取最新行情…"):
+            if force_refresh:
+                load_data.clear()
+                load_quotes.clear()
+            df, pairs, history, quotes, quote_time = load_all_models(
+                today, st.session_state.get("_history"), st.session_state.get("_quotes")
+            )
+            st.session_state._history = history
+            st.session_state._quotes = quotes
+            st.session_state._quote_time = quote_time
             st.session_state._df = df
             st.session_state._pairs = pairs
-            st.session_state._is_realtime = is_realtime
-            st.session_state._data_metadata = data_metadata
-    except Exception as exc:
-        st.error(f"数据加载失败：{exc}")
-        st.stop()
+            st.session_state._market_day = today
+            st.session_state._loaded_at = monotonic()
+    except Exception:
+        if "_pairs" not in st.session_state:
+            st.error("行情加载失败，请稍后重试。")
+            st.stop()
+        st.warning("暂时无法更新行情，继续使用上次成功加载的数据。")
 
 df = st.session_state._df
 pairs = st.session_state._pairs
-is_realtime = st.session_state._is_realtime
-data_metadata = st.session_state._data_metadata
-
 
 if st.session_state.page == "home":
     st.markdown(
@@ -713,12 +741,7 @@ if st.session_state.page == "home":
     )
     refresh_col, spacer = st.columns([1, 8])
     with refresh_col:
-        if st.button("刷新数据", key="refresh"):
-            get_realtime_quotes.clear()
-            load_data.clear()
-            for key in ("_df", "_pairs", "_is_realtime", "_data_metadata"):
-                st.session_state.pop(key, None)
-            st.rerun()
+        st.button("刷新数据", key="refresh", on_click=request_refresh)
 
     home_pairs = dict(pairs)
     try:
