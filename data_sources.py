@@ -32,6 +32,7 @@ class MarketDataError(RuntimeError):
 def _normalise_frame(frame: pd.DataFrame) -> pd.DataFrame:
     result = frame.copy()
     result.index = pd.to_datetime(result.index).normalize()
+    result = result.loc[result.index.dayofweek < 5]
     for column in INDEX_COLUMNS:
         if column not in result:
             result[column] = pd.NA
@@ -117,7 +118,7 @@ def fetch_public_index(item, start, end, session=requests):
         dates = pd.to_datetime(rows[date_field].astype(str), errors="coerce").dt.normalize()
         values = pd.to_numeric(rows["close"], errors="coerce")
         result = pd.Series(values.to_numpy(), index=dates, name=column).dropna()
-        result = result.loc[(result.index >= start) & (result.index <= end)]
+        result = result.loc[(result.index >= start) & (result.index <= end) & (result.index.dayofweek < 5)]
         result = result[(result > 0) & result.map(isfinite)]
         return result[~result.index.duplicated(keep="last")].sort_index()
 
@@ -140,6 +141,8 @@ def fetch_public_index(item, start, end, session=requests):
             }, timeout=(18, 15))
             response.raise_for_status()
             sina = dated_closes(pd.DataFrame(response.json()), "day")
+            if not closes.empty:
+                sina = sina.loc[sina.index > closes.index.max()]
             closes = closes.combine_first(sina)
         except (requests.RequestException, KeyError, TypeError, ValueError):
             pass
@@ -264,6 +267,10 @@ def load_market_history(
         ]
         public_history = pd.concat([job.result() for job in requests_by_index], axis=1)
 
+    # The bundled range has an audited trading calendar. Only extend it beyond its last close.
+    public_history = public_history.loc[
+        public_history.index.isin(embedded.index) | (public_history.index > embedded.index[-1])
+    ]
     combined, metadata = merge_market_history(embedded.loc[:end], ifind, public_history)
     combined = combined.loc[:end]
     metadata["latest_date"] = combined.index.max()

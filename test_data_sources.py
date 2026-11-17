@@ -58,7 +58,8 @@ class MarketDataTests(unittest.TestCase):
             ]}),
             FakeResponse([
                 {"day": "2026-11-13", "close": 6001}, {"day": "2026-11-16", "close": 6297.18},
-                {"day": "2026-11-17", "close": 6300}, {"day": "invalid", "close": 9999}
+                {"day": "2026-11-14", "close": 9999}, {"day": "2026-11-17", "close": 6300},
+                {"day": "invalid", "close": 9999}
             ])
         ]
         result = fetch_public_index(("000905.SH", "zz500"), pd.Timestamp("2026-11-13"),
